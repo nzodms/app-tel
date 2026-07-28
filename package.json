@@ -21,7 +21,8 @@
     "pretest": "npm run gen",
     "pretypecheck": "npm run gen",
     "verify:e2e": "node scripts/verify-e2e.mjs",
-    "smoke:production": "node scripts/smoke-production.mjs"
+    "smoke:production": "node scripts/smoke-production.mjs",
+    "gen:schema": "node scripts/snapshot-schema.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",

@@ -73,6 +73,27 @@ columns; without it every read of `users` fails and `/api/health` reports
 
 ---
 
+### Keeping the migrations honest
+
+`tests/schema-migrations.test.ts` runs the real services against a real store,
+takes the rows they actually produce, and checks every key against the real
+column list — captured by applying `supabase/migrations/*.sql` to a real
+Postgres 16 and introspecting it (`tests/fixtures/postgres-schema.json`).
+
+That catches the failure sitting directly behind the one that broke production:
+the code gains a field, the migration does not, and the deployed site starts
+rejecting inserts with `42703` — while local development stays green, because
+the JSON driver has no schema and stores anything.
+
+After adding a migration:
+
+```bash
+npm run gen:schema      # re-applies every migration to a throwaway Postgres
+npm test                # fails loudly if the code writes a column that is not there
+```
+
+---
+
 ## Verifying a deployment
 
 ```bash

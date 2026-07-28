@@ -47,10 +47,11 @@ projects.
 | `npm run dev` | Development server (regenerates templates + preview runtime first) |
 | `npm run build` / `npm start` | Production build and server |
 | `npm run verify` | Lint, typecheck and unit tests |
-| `npm test` | Unit tests only (150 tests) |
+| `npm test` | Unit tests only (154 tests) |
 | `npm run gen` | Rebuild generated sources: template bundles + the preview runtime |
 | `node scripts/verify-e2e.mjs http://localhost:3000` | End-to-end smoke test against a running server (103 checks) |
 | `npm run smoke:production <url>` | Post-deploy check against a **deployed** URL — refuses localhost |
+| `npm run gen:schema` | Re-apply the migrations to a throwaway Postgres and snapshot the schema |
 
 Editing anything under `templates/` or `src/preview/runtime/` requires
 `npm run gen` — both are compiled into `src/generated/`.
