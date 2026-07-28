@@ -23,12 +23,22 @@ driver under `.phonelab-data/`, so your account and projects survive restarts.
 
 Then:
 
-1. Create an account at `/signup`.
-2. Create the **PadelFlow** project from the dashboard.
-3. You land in the studio with two phones — a player and a club — running the same
-   codebase as different roles.
-4. Book a court on the player phone. The club phone gets a notification, its
-   Dynamic Island expands, and the timeline records the event.
+1. Create an account at **`http://localhost:3000/signup`**. You land straight on
+   **`/onboarding`**.
+2. Answer four short questions — what you are building, who uses it, whether to
+   connect Claude, and what to start from. Every answer is saved as you give it,
+   so closing the tab resumes rather than restarts.
+3. Finish. PhoneLab generates a real project from your brief — files, one phone
+   per role, a first version snapshot and a recorded journey — and drops you in
+   the studio.
+4. Prefer to see the reference project? Pick **PadelFlow demo** on the last step.
+   You get a player phone and a club phone running the same codebase as different
+   roles. Book a court on the player phone: the club phone gets a notification,
+   its Dynamic Island expands, and the timeline records the event.
+
+You can skip onboarding at any point, and reopen it later from the profile menu
+or **Settings → Account → Revisit onboarding**. Reopening it never touches your
+projects.
 
 ### Other commands
 
@@ -37,9 +47,9 @@ Then:
 | `npm run dev` | Development server (regenerates templates + preview runtime first) |
 | `npm run build` / `npm start` | Production build and server |
 | `npm run verify` | Lint, typecheck and unit tests |
-| `npm test` | Unit tests only (98 tests) |
+| `npm test` | Unit tests only (122 tests) |
 | `npm run gen` | Rebuild generated sources: template bundles + the preview runtime |
-| `node scripts/verify-e2e.mjs http://localhost:3000` | End-to-end smoke test against a running server (69 checks) |
+| `node scripts/verify-e2e.mjs http://localhost:3000` | End-to-end smoke test against a running server (103 checks) |
 
 Editing anything under `templates/` or `src/preview/runtime/` requires
 `npm run gen` — both are compiled into `src/generated/`.
@@ -132,6 +142,25 @@ this is, read that.
 
 ---
 
+## Routes
+
+| Route | What it is |
+| --- | --- |
+| `/` | Landing page. Signed in, it routes you: onboarding if you have never seen it, otherwise the dashboard |
+| `/signup`, `/login` | Account creation and sign-in. A new account always goes to `/onboarding` first |
+| `/onboarding` | The five-step first run. `?again=1` reopens it after you have finished |
+| `/dashboard` | Your projects, the demo, and the Claude connector card |
+| `/projects/new` | Describe an app and generate it, or start from a template |
+| `/studio/<projectId>` | The studio: code on the left, phones on a canvas on the right |
+| `/settings` | Name and studio preferences (stored on the account, not the browser) |
+| `/settings/connections` | Claude connections, scopes, personal access tokens |
+| `/settings/workspace` | Workspace name, counts, members |
+| `/share/<token>` | The reviewer surface — no account needed |
+| `/docs/mcp` | Connector setup and the tool list |
+| `/app` | Redirects to `/dashboard`. Kept because it used to be the dashboard |
+
+---
+
 ## Repository layout
 
 ```
@@ -141,6 +170,10 @@ src/
     studio/                The studio: canvas, phone, panels, store
       canvas/              Geometry, phone chassis, overlays, preview frames
       left/                Files, Code, Logs, Versions, Claude, Comments
+    onboarding/            The five-step first run
+    dashboard/             Project list, project creation, connector card
+    settings/              Account, connections, workspace
+    app-shell/             Header and profile menu shared outside the studio
     share/                 The reviewer surface
     ui/                    Design-system primitives
   lib/                     Shared: device presets, roles, edge cases, diff, protocol

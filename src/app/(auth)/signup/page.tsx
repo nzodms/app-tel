@@ -4,12 +4,14 @@ import { AuthForm } from '@/components/auth/auth-form';
 import { Wordmark } from '@/components/brand/logo';
 import { Card } from '@/components/ui/primitives';
 import { readSessionUser } from '@/server/http/session';
+import { landingPathFor } from '@/server/services/onboarding';
 
 export const metadata: Metadata = { title: 'Create an account' };
 
+/** A new account always goes to onboarding; `next` is honoured afterwards. */
 function safeNext(value: string | undefined): string {
-  if (!value) return '/app';
-  return value.startsWith('/') && !value.startsWith('//') ? value : '/app';
+  if (!value) return '/onboarding';
+  return value.startsWith('/') && !value.startsWith('//') ? value : '/onboarding';
 }
 
 export default async function SignupPage({
@@ -21,7 +23,7 @@ export default async function SignupPage({
   const next = safeNext(params.next);
 
   const user = await readSessionUser();
-  if (user) redirect(next);
+  if (user) redirect(user.onboardingCompletedAt ? next : landingPathFor(user));
 
   return (
     <main className="grid min-h-dvh place-items-center bg-paper-50 px-4 py-10">

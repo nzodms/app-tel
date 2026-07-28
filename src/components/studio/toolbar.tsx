@@ -24,6 +24,7 @@ import { Badge, Button, IconButton, StatusDot } from '@/components/ui/primitives
 import { MenuItem, MenuLabel, Popover } from '@/components/ui/popover';
 import { Logo } from '@/components/brand/logo';
 import { useStudio, useStudioApi } from './context';
+import { ProjectSwitcher } from './project-switcher';
 import { canvasApi } from './canvas/canvas-api';
 import { alignRects, distributeRects, tidyRects } from './canvas/geometry';
 import { deviceGeometry, getPreset } from '@/lib/devices/presets';
@@ -90,7 +91,7 @@ export function Toolbar({ onOpenShare }: { onOpenShare: () => void }) {
   return (
     <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-paper-200 bg-paper-0 px-2.5">
       <Link
-        href="/app"
+        href="/dashboard"
         className="flex items-center gap-1.5 rounded-md px-1 py-1 text-paper-800 transition-colors hover:bg-paper-100"
         title="All projects"
       >
@@ -98,12 +99,11 @@ export function Toolbar({ onOpenShare }: { onOpenShare: () => void }) {
       </Link>
 
       <div className="mr-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate text-[13px] font-semibold tracking-[-0.012em] text-paper-900">
-            {project.name}
-          </span>
-          {project.status === 'archived' ? <Badge tone="neutral">archived</Badge> : null}
-        </div>
+        <ProjectSwitcher
+          currentId={project.id}
+          currentName={project.name}
+          archived={project.status === 'archived'}
+        />
       </div>
 
       <Badge tone={buildTone} className="shrink-0">

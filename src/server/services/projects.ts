@@ -5,18 +5,31 @@ import { newId, slugify } from '../core/ids';
 import type {
   DeviceRow,
   Id,
+  ProjectBrief,
   ProjectFileRow,
   ProjectRow,
   Store,
 } from '../db';
 import { isPresetId, DEFAULT_PRESET_ID } from '@/lib/devices/presets';
-import { PROJECT_TEMPLATES, getTemplate, templateFiles } from '../templates';
+import {
+  PROJECT_TEMPLATES,
+  getTemplate,
+  templateFiles,
+  type TemplateDevice,
+  type TemplateJourney,
+} from '../templates';
 import { RT, getBus, projectChannel } from '../realtime/bus';
 import { languageForPath } from './paths';
 import { createSnapshot } from './versions';
 import { createJourney } from './journeys';
 import { logEvent } from './events';
 import { listFiles } from './files';
+import {
+  defaultUserFor,
+  generateScaffoldFiles,
+  generateScaffoldJourney,
+  getCategory,
+} from './scaffold';
 import type { Actor } from './access';
 
 /**
@@ -37,6 +50,26 @@ export const createProjectSchema = z.object({
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
+
+/**
+ * Server-side extras that are not part of the public create payload.
+ *
+ * Onboarding uses these to lay its generated `src/lib/config.ts` over the
+ * blueprint template and to record the brief it was generated from; the demo
+ * seeder uses `isDemo`. Nothing here is settable over the REST or MCP surface.
+ */
+export interface CreateProjectOptions {
+  isDemo?: boolean;
+  brief?: ProjectBrief | null;
+  /** Laid over the template's files, matched by path. */
+  extraFiles?: readonly { path: string; content: string }[];
+  /** Replaces the template's device layout. */
+  devices?: readonly TemplateDevice[];
+  /** Replaces the template's journeys. */
+  journeys?: readonly TemplateJourney[];
+  initialVersionLabel?: string;
+  initialVersionDescription?: string;
+}
 
 export interface ProjectRoleInfo {
   slug: string;
@@ -61,20 +94,36 @@ export async function createProject(
   store: Store,
   actor: Actor,
   input: CreateProjectInput,
+  options: CreateProjectOptions = {},
 ): Promise<{ project: ProjectRow; devices: DeviceRow[]; versionIds: Id[] }> {
   const parsed = createProjectSchema.parse(input);
   const template = getTemplate(parsed.templateId);
   if (!template) {
     throw badRequest(
-      `Unknown template "${parsed.templateId}". Available: ${PROJECT_TEMPLATES.map((entry) => entry.id).join(', ')}.`,
+      `Unknown template "${parsed.templateId}". Available: ${PROJECT_TEMPLATES.filter((entry) => !entry.hidden)
+        .map((entry) => entry.id)
+        .join(', ')}.`,
     );
   }
 
-  const sources = templateFiles(template.sourceKey);
+  const sources = mergeSources(templateFiles(template.sourceKey), options.extraFiles ?? []);
   if (sources.length === 0) {
     throw badRequest(
       `Template "${template.id}" has no files. Run "npm run gen" to rebuild template sources.`,
     );
+  }
+  if (template.requiresGeneratedFiles) {
+    const missing = template.requiresGeneratedFiles.filter(
+      (path) => !sources.some((source) => source.path === path),
+    );
+    if (missing.length > 0) {
+      // The blueprint template is deliberately incomplete on disk: onboarding
+      // supplies the generated config. Creating from it without that would
+      // produce a project that cannot compile, so refuse instead.
+      throw badRequest(
+        `Template "${template.id}" is only usable through the project generator; it is missing ${missing.join(', ')}.`,
+      );
+    }
   }
 
   const now = new Date().toISOString();
@@ -95,6 +144,8 @@ export async function createProject(
     createdBy: actor.userId,
     createdAt: now,
     updatedAt: now,
+    isDemo: options.isDemo ?? false,
+    brief: options.brief ?? null,
   };
 
   const files: ProjectFileRow[] = sources.map((source) => ({
@@ -111,7 +162,8 @@ export async function createProject(
     deletedAt: null,
   }));
 
-  const devices: DeviceRow[] = template.devices.slice(0, LIMITS.maxDevicesPerProject).map(
+  const deviceLayout = options.devices ?? template.devices;
+  const devices: DeviceRow[] = deviceLayout.slice(0, LIMITS.maxDevicesPerProject).map(
     (device, index) => ({
       id: newId('dev'),
       projectId,
@@ -143,8 +195,8 @@ export async function createProject(
   const versionIds: Id[] = [];
 
   const initial = await createSnapshot(store, projectId, {
-    label: 'V1',
-    description: `Initial ${template.name} scaffold.`,
+    label: options.initialVersionLabel ?? 'V1',
+    description: options.initialVersionDescription ?? `Initial ${template.name} scaffold.`,
     authorKind: 'system',
     createdBy: actor.userId,
   });
@@ -167,7 +219,7 @@ export async function createProject(
   }
 
   // Templates may ship recorded journeys so replay works from the first minute.
-  for (const journey of template.journeys ?? []) {
+  for (const journey of options.journeys ?? template.journeys ?? []) {
     await createJourney(
       store,
       projectId,
@@ -195,6 +247,106 @@ export async function createProject(
   });
 
   return { project, devices, versionIds };
+}
+
+/** Template files with the generated ones laid over the top, matched by path. */
+function mergeSources(
+  base: readonly { path: string; content: string }[],
+  extra: readonly { path: string; content: string }[],
+): { path: string; content: string }[] {
+  const byPath = new Map(base.map((source) => [source.path, { ...source }]));
+  for (const source of extra) byPath.set(source.path, { ...source });
+  return [...byPath.values()];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Generated projects                                                          */
+/* -------------------------------------------------------------------------- */
+
+export const generateProjectSchema = z.object({
+  workspaceId: z.string().min(1),
+  name: z.string().trim().min(1, 'Give the project a name.').max(80),
+  brief: z.object({
+    category: z.string().trim().max(40).default('other'),
+    audience: z.string().trim().max(200).default(''),
+    summary: z.string().trim().max(400).default(''),
+    roles: z.array(z.string().trim().min(1).max(24)).max(6).default([]),
+  }),
+});
+
+/**
+ * Creates a project from a brief rather than a template id.
+ *
+ * The blueprint template supplies every screen; the generator supplies one file of
+ * vocabulary and demo data. Onboarding's last step and `/projects/new` both call
+ * this, so the two cannot produce different projects for the same answers.
+ */
+export async function createGeneratedProject(
+  store: Store,
+  actor: Actor,
+  input: z.infer<typeof generateProjectSchema>,
+): Promise<{ project: ProjectRow; devices: DeviceRow[]; versionIds: Id[] }> {
+  const parsed = generateProjectSchema.parse(input);
+  const category = getCategory(parsed.brief.category);
+  const roles = normalizeRoleSlugs(parsed.brief.roles, category.suggestedRoles);
+  const brief: ProjectBrief = {
+    category: category.id,
+    audience: parsed.brief.audience,
+    summary: parsed.brief.summary,
+    roles,
+  };
+  const scaffold = { appName: parsed.name, brief };
+
+  return createProject(
+    store,
+    actor,
+    {
+      workspaceId: parsed.workspaceId,
+      name: parsed.name,
+      templateId: 'blueprint',
+      description: brief.summary || category.hint,
+    },
+    {
+      brief,
+      extraFiles: generateScaffoldFiles(scaffold),
+      devices: roles.slice(0, 2).map((role, index) => ({
+        name: titleCaseRole(role),
+        role,
+        presetId: DEFAULT_PRESET_ID,
+        userLabel: defaultUserFor(role),
+        x: index * 620,
+        y: 0,
+      })),
+      journeys: [generateScaffoldJourney(scaffold)],
+      initialVersionDescription: `Generated from your brief: ${brief.summary || category.hint}`,
+    },
+  );
+}
+
+/** At least two distinct roles, because the point is two phones talking. */
+export function normalizeRoleSlugs(
+  roles: readonly string[],
+  fallback: readonly string[],
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const role of roles) {
+    const slug = slugify(role, '');
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    out.push(slug);
+  }
+  for (const role of fallback) {
+    if (out.length >= 2) break;
+    if (seen.has(role)) continue;
+    seen.add(role);
+    out.push(role);
+  }
+  return out.slice(0, 6);
+}
+
+function titleCaseRole(value: string): string {
+  return value.replace(/[-_]/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 async function applyOverlay(
@@ -418,6 +570,8 @@ export async function duplicateProject(
     createdAt: now,
     updatedAt: now,
     status: 'active',
+    // A copy of the demo is the user's own project, not another demo.
+    isDemo: false,
   };
 
   await store.transaction(async (tx) => {

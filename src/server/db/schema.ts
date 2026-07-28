@@ -30,7 +30,31 @@ export interface UserRow {
   avatarHue: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+
+  /* --- onboarding ------------------------------------------------------- */
+  /**
+   * Set when the user finishes (or explicitly skips) onboarding.
+   *
+   * Deliberately its own field rather than inferred from "has a project": a
+   * project can exist because someone opened the demo, was invited to a
+   * workspace, or had one created over MCP — none of which means they have been
+   * shown around.
+   */
+  onboardingCompletedAt: Timestamp | null;
+  /** Furthest step reached, so a reload resumes rather than restarts. */
+  onboardingStep: number;
+  /** Answers collected so far. Persisted on every step. */
+  onboardingDraft: Record<string, unknown>;
+  /** Where "open PhoneLab" should land. */
+  activeWorkspaceId: Id | null;
+  activeProjectId: Id | null;
+  /** UI preferences that belong to the person, not the browser. */
+  preferences: UserPreferences;
 }
+
+import type { UserPreferences } from '@/lib/preferences';
+
+export { DEFAULT_PREFERENCES, type UserPreferences } from '@/lib/preferences';
 
 export interface SessionRow {
   id: Id;
@@ -88,6 +112,20 @@ export interface ProjectRow {
   createdBy: Id;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  /**
+   * Demo projects are shown in their own section and are never treated as the
+   * user's own work — opening one must not look like finishing onboarding.
+   */
+  isDemo: boolean;
+  /** Free-form product brief captured during onboarding, shown in the studio. */
+  brief: ProjectBrief | null;
+}
+
+export interface ProjectBrief {
+  category: string;
+  audience: string;
+  summary: string;
+  roles: string[];
 }
 
 /** Who last touched a file — drives the "modified by Claude" markers in the tree. */

@@ -238,3 +238,47 @@ string literals, and are compiled into `src/generated/templates.ts` by
 `npm run gen`. PadelFlow additionally ships a `padelflow-v2` overlay, applied on top
 of V1 at creation time so that version comparison has a genuine diff on day one, and
 a recorded journey so replay works immediately.
+
+A third template, `blueprint`, is the base the project generator builds on. It is a
+complete four-role app that reads every name, event and demo record from
+`src/lib/config.ts` — a file it deliberately does *not* ship. The template is marked
+`hidden` (kept out of the picker) and `requiresGeneratedFiles`, so `createProject`
+refuses it rather than laying down a project that cannot compile.
+
+---
+
+## Onboarding and project generation
+
+Two facts drive the routing:
+
+- `users.onboardingCompletedAt` is the *only* signal that someone has been shown
+  around. It is never inferred from owning a project — a project can exist because
+  the demo was created, because a workspace was shared, or because Claude made one
+  over MCP. Treating "has a project" as "is onboarded" is exactly the bug that made
+  onboarding unreachable in the first place.
+- `landingPathFor(user)` in `src/server/services/onboarding.ts` is the single
+  function `/`, `/app` and the auth pages call. Three separate redirect rules would
+  eventually disagree and bounce someone between them.
+
+Progress is written to `onboardingStep` and `onboardingDraft` on every step, merged
+rather than replaced, so a step only has to send its own fields and a reload resumes
+where the person was. A malformed draft parses back to an empty one — a draft is a
+convenience, never a gate.
+
+The last step calls `createGeneratedProject`, which is also what `/projects/new`
+calls. It resolves the brief's category to a `CategoryVocabulary` entry, generates
+`src/lib/config.ts` and `app.json`, lays them over the blueprint template, and hands
+the result to the ordinary `createProject` path — so a generated project gets the
+same files, devices, snapshot and journey treatment as any other, and the two entry
+points cannot produce different results for the same answers.
+
+The category → vocabulary mapping is a lookup table, not a language model: PhoneLab
+does not call an API to scaffold a project, and the generated file's header says as
+much. The claim being made is "here is a coherent starting point in your vocabulary",
+not "here is your app".
+
+`UserPreferences` lives in `src/lib/preferences.ts` rather than in the database
+schema, and `src/server/db/schema.ts` re-exports it. That looks like an odd place for
+it until you try the other way round: the studio store reads the defaults on the
+client, and importing a value out of `@/server/db` drags the local-store driver — and
+`node:fs` — into the browser bundle.

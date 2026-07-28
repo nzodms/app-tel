@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react';
 import { Wordmark } from '@/components/brand/logo';
 import { Badge, Button } from '@/components/ui/primitives';
 import { readSessionUser } from '@/server/http/session';
+import { landingPathFor } from '@/server/services/onboarding';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,10 +13,14 @@ export const dynamic = 'force-dynamic';
  *
  * Deliberately short and factual: what the product is, what is actually built, and
  * two links. No invented metrics, no testimonials, no decoration.
+ *
+ * A signed-in visitor is routed by `landingPathFor` — onboarding if they have
+ * never seen it, the dashboard otherwise. Never straight into a project: opening
+ * PhoneLab should show you your work, not whichever file you closed last.
  */
 export default async function HomePage() {
   const user = await readSessionUser();
-  if (user) redirect('/app');
+  if (user) redirect(landingPathFor(user));
 
   return (
     <div className="min-h-dvh bg-paper-50">

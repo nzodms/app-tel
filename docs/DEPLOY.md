@@ -44,12 +44,18 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
-Apply the migration first:
+Apply the migrations first, in order:
 
 ```bash
 psql "$DATABASE_URL" -f supabase/migrations/0001_init.sql
+psql "$DATABASE_URL" -f supabase/migrations/0002_onboarding.sql
 # or: supabase db push
 ```
+
+`0002` is additive — every column has a default or is nullable, so it is safe to
+apply before the new code rolls out. Existing accounts come out of it with
+`onboarding_completed_at = null`, which means they see onboarding once. That is
+deliberate: they have never been shown around.
 
 The service-role key is read by server code only, behind PhoneLab's own
 authorisation checks. RLS is enabled and denies by default on every table, so an

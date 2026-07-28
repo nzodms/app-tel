@@ -91,6 +91,17 @@ async function tool(token, name, args) {
 const stamp = Date.now().toString(36);
 const email = `e2e-${stamp}@phonelab.test`;
 
+section('Routing before sign-in');
+const anonOnboarding = await call('/onboarding', { raw: true });
+ok(
+  '/onboarding sends an anonymous visitor to sign in',
+  anonOnboarding.status === 307 &&
+    (anonOnboarding.headers.get('location') ?? '').includes('next=%2Fonboarding'),
+  `${anonOnboarding.status} → ${anonOnboarding.headers.get('location')}`,
+);
+const anonDashboard = await call('/dashboard', { raw: true });
+ok('/dashboard sends an anonymous visitor to sign in', anonDashboard.status === 307);
+
 section('Auth');
 const signup = await call('/api/auth/signup', {
   method: 'POST',
@@ -98,6 +109,111 @@ const signup = await call('/api/auth/signup', {
 });
 ok('sign up creates an account and a workspace', signup.status === 201, `status ${signup.status}`);
 ok('session cookie issued', cookie.startsWith('pl_session='));
+
+section('Onboarding');
+ok('a new account has not been onboarded', signup.json?.user?.onboardingCompletedAt === null);
+ok('a new account has default preferences', signup.json?.user?.preferences?.leftPaneWidth === 25);
+
+for (const path of ['/', '/app', '/dashboard']) {
+  const response = await call(path, { raw: true });
+  ok(
+    `${path} routes a new account to onboarding`,
+    response.headers.get('location') === '/onboarding',
+    String(response.headers.get('location')),
+  );
+}
+
+const onboardingPage = await call('/onboarding', { raw: true });
+ok('/onboarding renders', onboardingPage.status === 200, `status ${onboardingPage.status}`);
+
+const saved = await call('/api/onboarding', {
+  method: 'POST',
+  body: { action: 'save', step: 2, draft: { appName: `Padel Nord ${stamp}`, category: 'booking' } },
+});
+ok('a step is persisted', saved.json?.state?.step === 2, JSON.stringify(saved.json).slice(0, 160));
+const reread = await call('/api/onboarding');
+ok('the draft survives a reload', reread.json?.state?.draft?.category === 'booking');
+ok('and the account is still not onboarded', reread.json?.state?.completed === false);
+
+const completed = await call('/api/onboarding', {
+  method: 'POST',
+  body: {
+    action: 'complete',
+    draft: {
+      appName: `Padel Nord ${stamp}`,
+      category: 'booking',
+      summary: 'Members book a court and the club confirms it.',
+      roles: ['member', 'club'],
+      startWith: 'generated',
+    },
+  },
+});
+const generatedId = completed.json?.projectId;
+ok('completing onboarding creates a project', typeof generatedId === 'string', String(generatedId));
+ok('and lands in that project', completed.json?.redirectTo === `/studio/${generatedId}`);
+ok('and records completion', typeof completed.json?.state?.completedAt === 'string');
+
+const generatedFiles = await call(`/api/projects/${generatedId}/files`);
+const generatedPaths = (generatedFiles.json?.files ?? []).map((file) => file.path);
+ok('the generated project has an entry point', generatedPaths.includes('src/App.tsx'));
+ok('and the config generated from the brief', generatedPaths.includes('src/lib/config.ts'));
+
+const generatedBuild = await call(`/api/projects/${generatedId}/preview/build`, {
+  method: 'POST',
+  body: { ref: 'working' },
+});
+ok(
+  'the generated project compiles',
+  generatedBuild.json?.ok === true &&
+    (generatedBuild.json?.diagnostics ?? []).every((entry) => entry.severity !== 'error'),
+  JSON.stringify(generatedBuild.json?.diagnostics ?? []).slice(0, 240),
+);
+
+const generatedDevices = await call(`/api/projects/${generatedId}/devices`);
+const generatedRoles = (generatedDevices.json?.devices ?? []).map((device) => device.role).sort();
+ok('one phone per brief role', JSON.stringify(generatedRoles) === '["club","member"]', JSON.stringify(generatedRoles));
+
+for (const [path, expected] of [
+  ['/', '/dashboard'],
+  ['/app', '/dashboard'],
+  ['/onboarding', '/dashboard'],
+]) {
+  const response = await call(path, { raw: true });
+  ok(
+    `${path} routes an onboarded account to ${expected}`,
+    response.headers.get('location') === expected,
+    String(response.headers.get('location')),
+  );
+}
+const revisit = await call('/onboarding?again=1', { raw: true });
+ok('/onboarding?again=1 stays reachable after finishing', revisit.status === 200);
+
+for (const path of ['/dashboard', '/projects/new', '/settings', '/settings/connections', '/settings/workspace']) {
+  const response = await call(path, { raw: true });
+  ok(`${path} renders`, response.status === 200, `status ${response.status}`);
+}
+
+const demo = await call('/api/projects/demo', { method: 'POST', body: {} });
+ok('the demo can be created from the dashboard', demo.status === 201, `status ${demo.status}`);
+ok('and is flagged as a demo, not as your own work', demo.json?.project?.isDemo === true);
+
+const afterReset = await call('/api/onboarding', { method: 'POST', body: { action: 'reset' } });
+ok('onboarding can be reopened', afterReset.json?.state?.completed === false);
+const keptProjects = await call('/api/projects');
+ok(
+  'reopening it keeps every project',
+  (keptProjects.json?.projects ?? []).length >= 2,
+  `${(keptProjects.json?.projects ?? []).length} projects`,
+);
+const skipped = await call('/api/onboarding', { method: 'POST', body: { action: 'skip' } });
+ok('onboarding can be skipped', skipped.json?.state?.completed === true);
+
+const prefs = await call('/api/me', {
+  method: 'PATCH',
+  body: { preferences: { leftPaneWidth: 34 } },
+});
+ok('preferences save', prefs.json?.user?.preferences?.leftPaneWidth === 34);
+ok('and merge rather than replace', prefs.json?.user?.preferences?.canvasSnap === true);
 
 section('Project creation from the PadelFlow template');
 const create = await call('/api/projects', {

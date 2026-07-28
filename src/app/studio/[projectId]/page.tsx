@@ -7,6 +7,8 @@ import { isAppError } from '@/server/core/errors';
 import { readSessionUser } from '@/server/http/session';
 import { requireProjectAccess } from '@/server/services/access';
 import { loadStudioSnapshot } from '@/server/services/studio-snapshot';
+import { listProjectsForUser } from '@/server/services/projects';
+import { rememberActiveProject } from '@/server/services/profile';
 import { stripTrailingSlash } from '@/server/oauth/urls';
 
 export const dynamic = 'force-dynamic';
@@ -52,9 +54,12 @@ export default async function StudioPage({
   const { projectId } = await params;
   const user = await readSessionUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(`/studio/${projectId}`)}`);
+  // A bookmarked studio URL must not be a way around onboarding.
+  if (!user.onboardingCompletedAt) redirect('/onboarding');
 
   const store = getStore();
   let snapshot;
+  let switcher;
   try {
     const access = await requireProjectAccess(
       store,
@@ -62,11 +67,24 @@ export default async function StudioPage({
       projectId,
       'read',
     );
-    snapshot = await loadStudioSnapshot(access, user, await resolveBaseUrl(), store);
+    const [loaded, projects] = await Promise.all([
+      loadStudioSnapshot(access, user, await resolveBaseUrl(), store),
+      listProjectsForUser(store, user.id),
+    ]);
+    snapshot = loaded;
+    switcher = projects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      workspaceName: project.workspaceName,
+      isDemo: project.isDemo,
+      updatedAt: project.updatedAt,
+    }));
   } catch (error) {
     if (isAppError(error) && (error.code === 'not_found' || error.code === 'forbidden')) notFound();
     throw error;
   }
 
-  return <Studio snapshot={snapshot} />;
+  await rememberActiveProject(store, user.id, projectId);
+
+  return <Studio snapshot={snapshot} projects={switcher} />;
 }

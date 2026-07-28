@@ -2,10 +2,10 @@
 
 The honest inventory. Written so that nothing in PhoneLab has to be taken on trust.
 
-Verification: `npm run verify` (lint + typecheck + 98 unit tests) and
-`node scripts/verify-e2e.mjs <url>` (69 end-to-end checks against a running server)
-both pass. A browser pass with Playwright additionally confirms the studio renders,
-the previews run, and the cross-device flow works.
+Verification: `npm run verify` (lint + typecheck + 122 unit tests) and
+`node scripts/verify-e2e.mjs <url>` (103 end-to-end checks against a running server)
+both pass. A browser pass with Playwright additionally confirms the onboarding flow
+completes, the studio renders, the previews run, and the cross-device flow works.
 
 ---
 
@@ -18,6 +18,49 @@ the previews run, and the cross-device flow works.
 - Projects created from templates, with files, canvas devices, an initial snapshot
   and (for PadelFlow) a second version and a recorded journey.
 - Cross-tenant access returns 404, not 403.
+
+### Onboarding and first run
+- Five steps at `/onboarding`: welcome, what you are building, who uses it, connect
+  Claude, first project. Every answer is written to the account as it is given, so a
+  reload resumes at the step it was left on.
+- `onboardingCompletedAt` is the only thing that decides whether someone has been
+  shown around. It is never inferred from "has a project" — a project can exist
+  because the demo was created, a workspace was shared, or Claude made one over MCP.
+- `/`, `/app`, `/dashboard`, `/projects/new` and `/studio/<id>` all route a
+  never-onboarded account to `/onboarding`, including through a `?next=` on sign-in,
+  so a bookmark cannot skip it.
+- Skippable, and reopenable from the profile menu or Settings. Reopening clears the
+  flag and the step pointer only — projects, files, versions and devices are
+  untouched, which the tests assert.
+- The last step creates a real project through the same service the rest of the
+  product uses: files, one phone per role, a version snapshot and a recorded journey.
+  The E2E run compiles what it produced and fails if it does not build.
+
+### Project generation from a brief
+- `/projects/new` and onboarding's last step both call `createGeneratedProject`, so
+  they cannot drift apart.
+- The generated app is the `templates/blueprint` project — a complete, compiling,
+  four-role app — plus exactly two generated files: `src/lib/config.ts` (names,
+  roles, events, demo data) and `app.json`. Everything else is the same well-tested
+  code for every category.
+- The category → vocabulary mapping is a lookup table in `src/server/services/scaffold.ts`.
+  It is deterministic and inspectable; no model is called, and the generated file
+  says so in its header.
+- The `blueprint` template is hidden from the picker and refuses to be created
+  without its generated config, rather than laying down a project that cannot build.
+
+### Dashboard and settings
+- `/dashboard`: your projects, a "Continue" card for the last one you opened, a
+  filter, archived toggle, and the demo in its own section — because opening the
+  demo is not the same as having built something.
+- `/settings`: name and studio preferences. Preferences live on the account, not in
+  localStorage, so the studio renders at your pane width on the first paint.
+  Snap-to-grid, the canvas grid and the editor minimap are read by the canvas and
+  the editor; "reduce motion" sets `data-reduce-motion` on the studio root.
+- `/settings/connections`: the connector URL, live connections, scopes, revocation.
+- `/settings/workspace`: rename (owner/admin only), real project and member counts.
+- A project switcher in the studio toolbar, rendered with the page so opening it
+  costs no request.
 
 ### Files and code
 - Full working tree with soft deletes. Create, read, write, rename, delete, search
@@ -139,6 +182,10 @@ These behave consistently and are useful, but they are models, not the real thin
 | **Native builds, Expo Go, TestFlight, App Store** | Out of scope for V1. |
 | **Billing, credits, template marketplace** | Not present. There is no `ANTHROPIC_API_KEY` — users bring their own Claude subscription. |
 | **Real-time multiplayer editing** | Two people in one project will each see the other's committed changes through the realtime stream, but there is no presence, no cursors and no operational transform. |
+| **Inviting people to a workspace** | The permission model is real and enforced on every route and every MCP tool call, but there is no invitation flow: a workspace cannot gain a second member from the UI. `/settings/workspace` says this rather than showing a dead "Invite" button. Share links are the working alternative today. |
+| **Changing your email address, deleting an account, exporting data** | Listed as missing on `/settings` instead of being rendered as buttons that do nothing. |
+| **Dark mode** | `preferences.theme` exists in the schema and only `light` is honoured. The settings page says so. |
+| **Multiple workspaces** | One workspace per account, created at signup. The data model, the switcher in `/projects/new` and `listWorkspacesForUser` all handle several; nothing creates a second one. |
 
 ---
 
@@ -155,3 +202,10 @@ These behave consistently and are useful, but they are models, not the real thin
 - **The studio is desktop-only.** No responsive layout below ~1100px, by design.
 - **Landscape is supported but less polished than portrait**, particularly cutout
   placement on Android presets.
+- **The category list is fixed at nine.** A brief that fits none of them lands on
+  "Something else", which produces a generic two-sided app. The vocabulary is one
+  file in the generated project, so the fix is editing it rather than picking again.
+- **Onboarding's Claude step cannot verify the connection.** It shows the connector
+  URL and the steps; whether you actually added it in Claude is only visible once a
+  connection appears on the dashboard. The checkbox records "do not remind me", not
+  "connected".

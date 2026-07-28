@@ -171,6 +171,15 @@
       transition-duration: 0.01ms !important;
     }
   }
+
+  /* The same, opted into from Settings for people whose system setting says
+     otherwise — a busy canvas is a reason to want this per-app. */
+  [data-reduce-motion='true'] *,
+  [data-reduce-motion='true'] *::before,
+  [data-reduce-motion='true'] *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @keyframes pl-slide {

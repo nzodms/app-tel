@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { badRequest, conflict, unauthorized } from '../core/errors';
 import { hashSecret, sha256, verifySecret } from '../core/crypto';
 import { newId, newToken, slugify } from '../core/ids';
-import type { Id, SessionRow, Store, UserRow, WorkspaceRow } from '../db';
+import { DEFAULT_PREFERENCES } from '../db';
+import type { Id, SessionRow, Store, UserPreferences, UserRow, WorkspaceRow } from '../db';
 
 export const SESSION_COOKIE = 'pl_session';
 const SESSION_TTL_DAYS = 30;
@@ -22,8 +23,29 @@ export const signUpSchema = credentialsSchema.extend({
 export type PublicUser = Omit<UserRow, 'passwordHash' | 'passwordSalt'>;
 
 export function toPublicUser(user: UserRow): PublicUser {
-  const { passwordHash: _hash, passwordSalt: _salt, ...rest } = user;
+  const { passwordHash: _hash, passwordSalt: _salt, ...rest } = normalizeUser(user);
   return rest;
+}
+
+/**
+ * Fills in fields added after a row was first written.
+ *
+ * Rows created before onboarding existed have no `onboardingStep`, and a Postgres
+ * column added by a later migration can be null on old rows. Defaulting here — at
+ * the single place every read passes through — means the rest of the code can
+ * treat `UserRow` as complete, and an existing account lands on onboarding rather
+ * than on a half-rendered dashboard.
+ */
+export function normalizeUser(user: UserRow): UserRow {
+  return {
+    ...user,
+    onboardingCompletedAt: user.onboardingCompletedAt ?? null,
+    onboardingStep: typeof user.onboardingStep === 'number' ? user.onboardingStep : 0,
+    onboardingDraft: user.onboardingDraft ?? {},
+    activeWorkspaceId: user.activeWorkspaceId ?? null,
+    activeProjectId: user.activeProjectId ?? null,
+    preferences: { ...DEFAULT_PREFERENCES, ...(user.preferences ?? {}) } as UserPreferences,
+  };
 }
 
 function hueFor(email: string): number {
@@ -54,6 +76,7 @@ export async function signUp(
 
   const { hash, salt } = await hashSecret(password);
   const now = new Date().toISOString();
+  const workspaceId = newId('wsp');
 
   const user: UserRow = {
     id: newId('usr'),
@@ -64,10 +87,18 @@ export async function signUp(
     avatarHue: hueFor(email),
     createdAt: now,
     updatedAt: now,
+    // A brand-new account has seen nothing yet. This is the flag the router reads
+    // to send someone to /onboarding instead of /dashboard.
+    onboardingCompletedAt: null,
+    onboardingStep: 0,
+    onboardingDraft: {},
+    activeWorkspaceId: workspaceId,
+    activeProjectId: null,
+    preferences: DEFAULT_PREFERENCES,
   };
 
   const workspace: WorkspaceRow = {
-    id: newId('wsp'),
+    id: workspaceId,
     name: `${name.split(' ')[0] ?? name}'s workspace`,
     slug: slugify(`${name}-workspace`, 'workspace'),
     ownerId: user.id,

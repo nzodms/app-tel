@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { cn } from '@/lib/cn';
 import { deviceGeometry, getPreset } from '@/lib/devices/presets';
 import type { DeviceRow } from '@/server/db';
 import { useStudio, useStudioApi } from '../context';
@@ -58,6 +59,8 @@ export function Canvas() {
   const store = useStudioApi();
   const devices = useStudio((state) => state.devices);
   const selectedIds = useStudio((state) => state.selectedDeviceIds);
+  const showGrid = useStudio((state) => state.preferences.canvasGrid);
+  const snapEnabled = useStudio((state) => state.preferences.canvasSnap);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const worldRef = useRef<HTMLDivElement | null>(null);
@@ -70,6 +73,11 @@ export function Canvas() {
   const panRef = useRef<PanState | null>(null);
   const spaceRef = useRef(false);
   const didInitialFit = useRef(false);
+  // Read inside the pointermove handler, which must not re-subscribe mid-gesture.
+  const snapEnabledRef = useRef(snapEnabled);
+  useEffect(() => {
+    snapEnabledRef.current = snapEnabled;
+  }, [snapEnabled]);
 
   /** World-space rect of a device, from its preset geometry. */
   const rectFor = useCallback((device: DeviceRow): Rect => {
@@ -340,10 +348,11 @@ export function Canvas() {
       const primaryRect = rectFor(primary);
       const proposed: Rect = { ...primaryRect, x: origin.x + dx, y: origin.y + dy };
 
-      // Snapping is opt-out with alt, and always weak: the threshold is in screen
-      // pixels, so it never fights the pointer when you are zoomed in.
+      // Snapping is opt-out with alt (or off entirely in settings), and always
+      // weak: the threshold is in screen pixels, so it never fights the pointer
+      // when you are zoomed in.
       let snapped = { x: proposed.x, y: proposed.y, guides: [] as ReturnType<typeof snapRect>['guides'] };
-      if (!event.altKey) {
+      if (!event.altKey && snapEnabledRef.current) {
         const others = devices.filter((entry) => !drag.origins.has(entry.id)).map(rectFor);
         snapped = snapRect(proposed, others, SNAP_THRESHOLD_PX / scale);
       }
@@ -415,7 +424,10 @@ export function Canvas() {
   return (
     <div
       ref={viewportRef}
-      className="pl-canvas-surface pl-no-select relative h-full w-full overflow-hidden"
+      className={cn(
+        'pl-no-select relative h-full w-full overflow-hidden',
+        showGrid ? 'pl-canvas-surface' : 'bg-[var(--pl-canvas-bg)]',
+      )}
       onPointerDown={onViewportPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endGesture}

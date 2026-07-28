@@ -4,13 +4,14 @@ import { AuthForm } from '@/components/auth/auth-form';
 import { Wordmark } from '@/components/brand/logo';
 import { Card } from '@/components/ui/primitives';
 import { readSessionUser } from '@/server/http/session';
+import { landingPathFor } from '@/server/services/onboarding';
 
 export const metadata: Metadata = { title: 'Sign in' };
 
 /** `next` carries the destination through the OAuth consent flow. */
 function safeNext(value: string | undefined): string {
-  if (!value) return '/app';
-  return value.startsWith('/') && !value.startsWith('//') ? value : '/app';
+  if (!value) return '/dashboard';
+  return value.startsWith('/') && !value.startsWith('//') ? value : '/dashboard';
 }
 
 export default async function LoginPage({
@@ -22,7 +23,9 @@ export default async function LoginPage({
   const next = safeNext(params.next);
 
   const user = await readSessionUser();
-  if (user) redirect(next);
+  // Onboarding wins over `next` for someone who has never seen it — otherwise a
+  // bookmarked studio URL would quietly skip it forever.
+  if (user) redirect(user.onboardingCompletedAt ? next : landingPathFor(user));
 
   return (
     <main className="grid min-h-dvh place-items-center bg-paper-50 px-4 py-10">

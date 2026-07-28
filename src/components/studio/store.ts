@@ -5,6 +5,9 @@ import { api, errorText } from '@/lib/api-client';
 import { getPreset, deviceGeometry } from '@/lib/devices/presets';
 import { EDGE_CASES } from '@/lib/devices/edge-cases';
 import type { PreviewDeviceContext, PreviewMessage, PreviewNotification, ReplayStep } from '@/lib/preview/protocol';
+// From `src/lib`, not the database barrel: importing values out of `@/server/db`
+// pulls the local-store driver — and `node:fs` with it — into the client bundle.
+import { DEFAULT_PREFERENCES, type UserPreferences } from '@/lib/preferences';
 import type { DeviceEventRow, DeviceRow, Diagnostic, JourneyRow } from '@/server/db';
 import type { FileSummary, TreeNode } from '@/server/services/files';
 import type { VersionSummary } from '@/server/services/versions';
@@ -70,6 +73,8 @@ interface StudioState {
   /* client-only view state */
   leftTab: LeftTab;
   leftWidth: number;
+  /** From the account, not the browser — see `UserPreferences`. */
+  preferences: UserPreferences;
   openFiles: OpenFile[];
   activeFilePath: string | null;
   selectedDeviceIds: string[];
@@ -94,6 +99,8 @@ interface StudioState {
 interface StudioActions {
   setLeftTab: (tab: LeftTab) => void;
   setLeftWidth: (width: number) => void;
+  /** Persists the current pane width to the account. Called on pointer-up only. */
+  persistLeftWidth: () => void;
   notify: (kind: 'info' | 'success' | 'error', message: string) => void;
   dismissToast: () => void;
 
@@ -203,7 +210,8 @@ export function createStudioStore(snapshot: StudioSnapshot) {
     buildDurationMs: snapshot.lastBuild?.durationMs ?? null,
 
     leftTab: 'files',
-    leftWidth: 25,
+    preferences: { ...DEFAULT_PREFERENCES, ...(snapshot.user.preferences ?? {}) },
+    leftWidth: snapshot.user.preferences?.leftPaneWidth ?? DEFAULT_PREFERENCES.leftPaneWidth,
     openFiles: [],
     activeFilePath: null,
     selectedDeviceIds: snapshot.devices[0] ? [snapshot.devices[0].id] : [],
@@ -232,6 +240,13 @@ export function createStudioStore(snapshot: StudioSnapshot) {
 
     setLeftTab: (tab) => set({ leftTab: tab }),
     setLeftWidth: (width) => set({ leftWidth: Math.min(Math.max(width, 16), 62) }),
+    persistLeftWidth: () => {
+      // Fire and forget: a failed preference write is not worth interrupting anyone.
+      void api('/api/me', {
+        method: 'PATCH',
+        body: { preferences: { leftPaneWidth: Math.round(get().leftWidth) } },
+      }).catch(() => undefined);
+    },
     notify: (kind, message) => {
       set({ toast: { kind, message } });
       window.setTimeout(() => {

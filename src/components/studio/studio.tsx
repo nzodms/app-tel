@@ -28,6 +28,7 @@ import { VersionsPanel } from './left/versions-panel';
 import { ClaudePanel } from './left/claude-panel';
 import { CommentsPanel } from './left/comments-panel';
 import { useRealtime } from './use-realtime';
+import { ProjectSwitcherProvider, type SwitcherProject } from './project-switcher';
 import type { LeftTab, StudioSnapshot } from './types';
 
 /**
@@ -37,11 +38,20 @@ import type { LeftTab, StudioSnapshot } from './types';
  * and the split is draggable. Everything below is composition; the interesting code
  * lives in `canvas/`, `store.ts` and the panels.
  */
-export function Studio({ snapshot }: { snapshot: StudioSnapshot }) {
+export function Studio({
+  snapshot,
+  projects = [],
+}: {
+  snapshot: StudioSnapshot;
+  /** Everything the person can open, for the toolbar's project switcher. */
+  projects?: SwitcherProject[];
+}) {
   return (
-    <StudioProvider snapshot={snapshot}>
-      <StudioShell />
-    </StudioProvider>
+    <ProjectSwitcherProvider projects={projects}>
+      <StudioProvider snapshot={snapshot}>
+        <StudioShell />
+      </StudioProvider>
+    </ProjectSwitcherProvider>
   );
 }
 
@@ -61,6 +71,8 @@ function StudioShell() {
   const setLeftTab = useStudio((state) => state.setLeftTab);
   const leftWidth = useStudio((state) => state.leftWidth);
   const setLeftWidth = useStudio((state) => state.setLeftWidth);
+  const persistLeftWidth = useStudio((state) => state.persistLeftWidth);
+  const reduceMotion = useStudio((state) => state.preferences.reduceMotion);
   const openThreads = useStudio((state) => state.threads.filter((thread) => thread.status === 'open').length);
   const errorCount = useStudio(
     (state) => state.diagnostics.filter((entry) => entry.severity === 'error').length,
@@ -175,16 +187,24 @@ function StudioShell() {
     [setLeftWidth],
   );
 
-  const onResizeEnd = useCallback((event: React.PointerEvent) => {
-    if (resizeRef.current?.pointerId !== event.pointerId) return;
-    resizeRef.current = null;
-    document.body.style.cursor = '';
-    // The canvas viewport changed size; keep everything in frame.
-    window.setTimeout(() => canvasApi.get()?.fit(), 40);
-  }, []);
+  const onResizeEnd = useCallback(
+    (event: React.PointerEvent) => {
+      if (resizeRef.current?.pointerId !== event.pointerId) return;
+      resizeRef.current = null;
+      document.body.style.cursor = '';
+      // The canvas viewport changed size; keep everything in frame.
+      window.setTimeout(() => canvasApi.get()?.fit(), 40);
+      // One write per gesture, not one per pointermove.
+      persistLeftWidth();
+    },
+    [persistLeftWidth],
+  );
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-paper-50">
+    <div
+      className="flex h-dvh flex-col overflow-hidden bg-paper-50"
+      data-reduce-motion={reduceMotion ? 'true' : undefined}
+    >
       <Toolbar onOpenShare={() => setShareOpen(true)} />
 
       <div ref={containerRef} className="flex min-h-0 flex-1">

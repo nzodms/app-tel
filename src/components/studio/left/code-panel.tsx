@@ -102,8 +102,11 @@ export function CodePanel() {
   const diagnostics = useStudio((state) => state.diagnostics);
   const compare = useStudio((state) => state.compare);
   const projectId = useStudio((state) => state.snapshot.project.id);
+  const minimapPreference = useStudio((state) => state.preferences.editorMinimap);
 
-  const [minimap, setMinimap] = useState(false);
+  // The account preference is the starting state; the toolbar button toggles it
+  // for this session without writing it back.
+  const [minimap, setMinimap] = useState(minimapPreference);
   // Keyed by the comparison it belongs to, so a stale result is simply ignored on
   // render rather than needing a synchronous reset inside the effect.
   const [diff, setDiff] = useState<{ key: string; before: string; after: string } | null>(null);

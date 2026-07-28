@@ -44,6 +44,16 @@ export interface ProjectTemplate {
   highlights: string[];
   /** Journeys created with the project, so replay works from the first minute. */
   journeys?: TemplateJourney[];
+  /**
+   * Kept out of the template picker. The blueprint is a base the project
+   * generator completes; on its own it is missing files and would not compile.
+   */
+  hidden?: boolean;
+  /**
+   * Paths the caller must supply. `createProject` refuses rather than laying down
+   * a project that cannot build.
+   */
+  requiresGeneratedFiles?: string[];
 }
 
 export interface TemplateJourney {
@@ -134,7 +144,37 @@ export const PROJECT_TEMPLATES: readonly ProjectTemplate[] = [
     ],
     highlights: ['3 files to read', 'Shared state between phones', 'Good starting point for Claude'],
   },
+  {
+    id: 'blueprint',
+    name: 'Blueprint',
+    tagline: 'Generated from your brief',
+    summary:
+      'The base the project generator builds on: a complete two-sided app whose vocabulary, roles and demo data come from one generated file.',
+    entryFile: 'src/App.tsx',
+    sourceKey: 'blueprint',
+    roles: [
+      { slug: 'customer', label: 'Customer', user: 'Léa Martin' },
+      { slug: 'provider', label: 'Provider', user: 'Nord Studio' },
+      { slug: 'guest', label: 'Visitor', user: null },
+    ],
+    devices: [
+      { name: 'Customer', role: 'customer', presetId: DEFAULT_PRESET_ID, userLabel: 'Léa Martin', x: 0, y: 0 },
+      { name: 'Provider', role: 'provider', presetId: DEFAULT_PRESET_ID, userLabel: 'Nord Studio', x: 620, y: 0 },
+    ],
+    highlights: [
+      'Two roles that talk to each other',
+      'Vocabulary in one generated file',
+      'Handles the standard edge-case flags',
+    ],
+    hidden: true,
+    requiresGeneratedFiles: ['src/lib/config.ts'],
+  },
 ] as const;
+
+/** Templates a person can pick from a list. Excludes generator-only bases. */
+export const SELECTABLE_TEMPLATES: readonly ProjectTemplate[] = PROJECT_TEMPLATES.filter(
+  (template) => !template.hidden,
+);
 
 const BY_ID = new Map(PROJECT_TEMPLATES.map((template) => [template.id, template]));
 
@@ -147,5 +187,5 @@ export function templateFiles(sourceKey: string): TemplateFileSource[] {
 }
 
 export function templateIds(): string[] {
-  return PROJECT_TEMPLATES.map((template) => template.id);
+  return SELECTABLE_TEMPLATES.map((template) => template.id);
 }
