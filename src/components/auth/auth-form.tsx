@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { api, errorText } from '@/lib/api-client';
+import { api, friendlyError, type FriendlyError } from '@/lib/api-client';
 import { Button, Field, Input } from '@/components/ui/primitives';
 
 /**
@@ -17,7 +17,7 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next: strin
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FriendlyError | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (event: FormEvent) => {
@@ -34,7 +34,7 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next: strin
       router.replace(next);
       router.refresh();
     } catch (cause) {
-      setError(errorText(cause));
+      setError(friendlyError(cause));
       setBusy(false);
     }
   };
@@ -81,9 +81,16 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next: strin
       {error ? (
         <div
           role="alert"
+          data-testid="auth-error"
           className="rounded-lg border border-danger-200 bg-danger-50 px-2.5 py-2 text-[12.5px] leading-relaxed text-danger-700"
         >
-          {error}
+          <div className="font-medium">{error.message}</div>
+          {error.hint ? <div className="mt-0.5 text-danger-700/85">{error.hint}</div> : null}
+          {error.reference ? (
+            <div className="mt-1 font-mono text-[11.5px] text-danger-700/75">
+              Reference: {error.reference}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

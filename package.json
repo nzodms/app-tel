@@ -20,7 +20,8 @@
     "prebuild": "npm run gen && node scripts/copy-monaco.mjs",
     "pretest": "npm run gen",
     "pretypecheck": "npm run gen",
-    "verify:e2e": "node scripts/verify-e2e.mjs"
+    "verify:e2e": "node scripts/verify-e2e.mjs",
+    "smoke:production": "node scripts/smoke-production.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",

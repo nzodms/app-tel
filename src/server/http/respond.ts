@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { AppError, isAppError } from '../core/errors';
+import { describeError, log, newDiagnosticRef } from '../core/logging';
 
 export interface ApiErrorBody {
   error: {
     code: string;
     message: string;
+    /** Present on 5xx: quote this and the matching log line can be found. */
+    reference?: string;
     details?: Record<string, unknown>;
   };
 }
@@ -24,6 +27,26 @@ export function noContent(): NextResponse {
 
 export function failure(error: unknown): NextResponse {
   if (isAppError(error)) {
+    // A configuration or storage failure is ours, not the caller's, and needs to
+    // be findable in the logs even though it is not a 500.
+    if (error.status >= 500) {
+      const reference = newDiagnosticRef();
+      log('error', 'route.failed', {
+        reference,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      });
+      const body: ApiErrorBody = {
+        error: {
+          code: error.code,
+          message: error.message,
+          reference,
+          ...(error.details ? { details: error.details } : {}),
+        },
+      };
+      return NextResponse.json(body, { status: error.status });
+    }
     const body: ApiErrorBody = {
       error: { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) },
     };
@@ -41,9 +64,20 @@ export function failure(error: unknown): NextResponse {
     return NextResponse.json(body, { status: 422 });
   }
 
-  console.error('[phonelab] unhandled route error', error);
+  // Anything reaching here is a bug. The reference is the only thread between
+  // what the person saw on screen and the line that explains it, so it goes in
+  // both places — that is the whole reason it exists.
+  const reference = newDiagnosticRef();
+  log('error', 'route.unhandled', { reference, error: describeError(error) });
+  if (error instanceof Error && error.stack) {
+    console.error(`[phonelab] ${reference} stack`, error.stack);
+  }
   const body: ApiErrorBody = {
-    error: { code: 'internal', message: 'Something went wrong on our side.' },
+    error: {
+      code: 'internal',
+      message: `Something went wrong on our side. Reference: ${reference}`,
+      reference,
+    },
   };
   return NextResponse.json(body, { status: 500 });
 }

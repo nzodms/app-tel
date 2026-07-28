@@ -4,7 +4,16 @@ import { getStore } from '../db';
 import { SESSION_COOKIE, resolveSession, type PublicUser } from '../services/auth';
 import type { Actor } from '../services/access';
 
-const isProd = process.env.NODE_ENV === 'production';
+/**
+ * `Secure` must follow the scheme, not the build mode.
+ *
+ * A Vercel preview deployment is served over HTTPS but does not always report
+ * NODE_ENV=production; a cookie without `Secure` there is both a downgrade risk
+ * and, in a browser enforcing it, simply dropped — which reads as "sign-up
+ * worked but I am still logged out".
+ */
+const isSecureDeployment =
+  process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
 
 export async function readSessionUser(): Promise<PublicUser | null> {
   const jar = await cookies();
@@ -28,7 +37,7 @@ export async function setSessionCookie(token: string, expiresAt: string): Promis
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProd,
+    secure: isSecureDeployment,
     path: '/',
     expires: new Date(expiresAt),
   });
@@ -40,7 +49,7 @@ export async function clearSessionCookie(): Promise<string | undefined> {
   jar.set(SESSION_COOKIE, '', {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProd,
+    secure: isSecureDeployment,
     path: '/',
     maxAge: 0,
   });

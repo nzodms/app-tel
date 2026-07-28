@@ -47,9 +47,10 @@ projects.
 | `npm run dev` | Development server (regenerates templates + preview runtime first) |
 | `npm run build` / `npm start` | Production build and server |
 | `npm run verify` | Lint, typecheck and unit tests |
-| `npm test` | Unit tests only (122 tests) |
+| `npm test` | Unit tests only (150 tests) |
 | `npm run gen` | Rebuild generated sources: template bundles + the preview runtime |
 | `node scripts/verify-e2e.mjs http://localhost:3000` | End-to-end smoke test against a running server (103 checks) |
+| `npm run smoke:production <url>` | Post-deploy check against a **deployed** URL — refuses localhost |
 
 Editing anything under `templates/` or `src/preview/runtime/` requires
 `npm run gen` — both are compiled into `src/generated/`.
@@ -118,13 +119,20 @@ or `curl` at the endpoint.
 
 ## Deploying
 
-See [docs/DEPLOY.md](docs/DEPLOY.md). The short version:
+Deploying to Vercel: [docs/VERCEL.md](docs/VERCEL.md). Elsewhere:
+[docs/DEPLOY.md](docs/DEPLOY.md). The short version:
 
+- **`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are required in production.**
+  PhoneLab refuses to start without them rather than falling back to the
+  file-backed driver — that driver writes under `process.cwd()`, which is
+  read-only inside a Lambda, and a deployment using it can serve pages while
+  being unable to create a single account.
+- Apply `supabase/migrations/0001_init.sql`, then `0002_onboarding.sql`.
 - Set `PHONELAB_BASE_URL` to your public origin — it is the OAuth issuer and the
   audience that access tokens are bound to.
-- For anything beyond a single node, set `SUPABASE_URL` and
-  `SUPABASE_SERVICE_ROLE_KEY` and apply `supabase/migrations/0001_init.sql`.
 - Node runtime required (esbuild compiles previews server-side).
+- Then check it: `curl <origin>/api/health` and
+  `npm run smoke:production <origin>`.
 
 ---
 
@@ -136,6 +144,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md). The short version:
 | [docs/MCP.md](docs/MCP.md) | The connector: transport, OAuth, every tool, limits |
 | [docs/STATUS.md](docs/STATUS.md) | **What is real, what is simulated, what is not built** |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Production setup |
+| [docs/VERCEL.md](docs/VERCEL.md) | **Deploying to Vercel: required variables, migrations, health check, smoke test** |
 
 `docs/STATUS.md` is the honest inventory. If you read one thing before judging what
 this is, read that.

@@ -1,6 +1,84 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { AppError } from '../core/errors';
 import type { Row, TableName } from './schema';
 import type { Predicate, Query, Store } from './store';
+
+/** Postgres SQLSTATEs that mean "the migrations have not been applied here". */
+const MISSING_TABLE_SQLSTATES = new Set([
+  '42P01', // undefined_table
+  '3F000', // invalid_schema_name
+  'PGRST205', // PostgREST: table not found in schema cache
+]);
+
+/** A missing *column* is a different repair from a missing table — 0002, not 0001. */
+const MISSING_COLUMN_SQLSTATES = new Set([
+  '42703', // undefined_column
+  'PGRST204', // PostgREST: column not found in schema cache
+]);
+
+interface PostgrestLikeError {
+  code?: string | null;
+  message: string;
+  details?: string | null;
+  hint?: string | null;
+}
+
+/**
+ * Turns a driver error into one the API layer can classify.
+ *
+ * The distinction that matters in production is "the database is not there" vs
+ * "the database is there but this table is not" — the first is an outage, the
+ * second means someone deployed without running the migrations. Both used to
+ * arrive as an anonymous `Error` and come out as a 500 saying nothing.
+ */
+export function translateStoreError(
+  operation: string,
+  table: string,
+  error: PostgrestLikeError | Error,
+): AppError {
+  const code = 'code' in error ? (error.code ?? undefined) : undefined;
+  const message = error.message ?? String(error);
+
+  if (code && MISSING_TABLE_SQLSTATES.has(code)) {
+    return new AppError(
+      'schema_missing',
+      `The database is reachable but table "${table}" does not exist. Apply supabase/migrations/0001_init.sql and 0002_onboarding.sql, then retry.`,
+      { operation, table, sqlstate: code },
+    );
+  }
+
+  // A table that exists but is missing a column added by a later migration.
+  if ((code && MISSING_COLUMN_SQLSTATES.has(code)) || /column .* does not exist/i.test(message)) {
+    return new AppError(
+      'schema_missing',
+      `The database schema is behind the code (${message}). Apply the pending migrations in supabase/migrations/, then retry.`,
+      { operation, table },
+    );
+  }
+
+  // supabase-js surfaces connectivity problems as a plain TypeError from fetch.
+  if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|socket hang up|getaddrinfo/i.test(message)) {
+    return new AppError(
+      'storage_unavailable',
+      'The database is not reachable from this deployment. Check SUPABASE_URL and that the project is not paused.',
+      { operation, table },
+    );
+  }
+
+  if (code === '401' || code === '403' || /JWT|invalid api key|Invalid API key/i.test(message)) {
+    return new AppError(
+      'configuration_error',
+      'The database rejected our credentials. Check SUPABASE_SERVICE_ROLE_KEY in this environment.',
+      { operation, table },
+    );
+  }
+
+  return new AppError('storage_unavailable', `${operation} ${table}: ${message}`, {
+    operation,
+    table,
+    ...(code ? { sqlstate: code } : {}),
+  });
+}
 
 /**
  * Postgres driver, via Supabase.
@@ -68,7 +146,7 @@ export class SupabaseStore implements Store {
 
   async select<T extends TableName>(table: T, query?: Query<Row<T>>): Promise<Row<T>[]> {
     const { data, error } = await this.build(table, query, '*');
-    if (error) throw new Error(`select ${table}: ${error.message}`);
+    if (error) throw translateStoreError('select', this.table(table), error);
     return (data ?? []).map(
       (row) => keysToCamel(row as unknown as Record<string, unknown>) as unknown as Row<T>,
     );
@@ -84,7 +162,7 @@ export class SupabaseStore implements Store {
       count: (res.data ?? []).length,
       error: res.error,
     }));
-    if (error) throw new Error(`count ${table}: ${error.message}`);
+    if (error) throw translateStoreError('count', this.table(table), error);
     return count;
   }
 
@@ -98,7 +176,7 @@ export class SupabaseStore implements Store {
     if (rows.length === 0) return [];
     const payload = rows.map((row) => keysToSnake(row as unknown as Record<string, unknown>));
     const { data, error } = await this.client.from(this.table(table)).insert(payload).select('*');
-    if (error) throw new Error(`insert ${table}: ${error.message}`);
+    if (error) throw translateStoreError('insert', this.table(table), error);
     return (data ?? []).map(
       (row) => keysToCamel(row as unknown as Record<string, unknown>) as unknown as Row<T>,
     );
@@ -114,7 +192,7 @@ export class SupabaseStore implements Store {
       .update(keysToSnake(patch as unknown as Record<string, unknown>))
       .eq('id', id)
       .select('*');
-    if (error) throw new Error(`update ${table}: ${error.message}`);
+    if (error) throw translateStoreError('update', this.table(table), error);
     const row = (data ?? [])[0];
     if (!row) throw new Error(`No ${table} row with id ${id}`);
     return keysToCamel(row as unknown as Record<string, unknown>) as unknown as Row<T>;
@@ -135,7 +213,7 @@ export class SupabaseStore implements Store {
         'id',
         rows.map((row) => (row as { id: string }).id),
       );
-    if (error) throw new Error(`updateWhere ${table}: ${error.message}`);
+    if (error) throw translateStoreError('updateWhere', this.table(table), error);
     return rows.length;
   }
 
@@ -145,7 +223,7 @@ export class SupabaseStore implements Store {
       .delete()
       .eq('id', id)
       .select('id');
-    if (error) throw new Error(`remove ${table}: ${error.message}`);
+    if (error) throw translateStoreError('remove', this.table(table), error);
     return (data ?? []).length > 0;
   }
 
@@ -159,7 +237,7 @@ export class SupabaseStore implements Store {
         'id',
         rows.map((row) => (row as { id: string }).id),
       );
-    if (error) throw new Error(`removeWhere ${table}: ${error.message}`);
+    if (error) throw translateStoreError('removeWhere', this.table(table), error);
     return rows.length;
   }
 
