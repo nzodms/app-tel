@@ -97,6 +97,10 @@ function StudioShell() {
       // The nonce identifies which frame, and `event.source` proves it.
       const deviceId = previewRegistry.resolve(event.source, data.nonce);
       if (!deviceId) return;
+      // Proof the frame is listening, whatever the message. Recovers a frame
+      // whose one-shot `preview:ready` was missed, which otherwise leaves it
+      // queueing forever.
+      previewRegistry.markReadyFromInbound(deviceId);
       store.getState().handlePreviewMessage(deviceId, data);
     };
     window.addEventListener('message', onMessage);

@@ -18,6 +18,9 @@ import { runtimeState } from './state';
  */
 
 let nonce = '';
+/** Set once the host says anything at all; stops the readiness retries. */
+let acknowledged = false;
+let readyTimer: number | null = null;
 let inspectMode = false;
 let currentHash = '';
 let mounted = false;
@@ -64,6 +67,9 @@ export function initBridge(hooks: BridgeHooks): void {
     if (event.source !== window.parent) return;
     const data = event.data;
     if (!isHostMessage(data) || data.nonce !== nonce) return;
+    // The host is listening. Whatever it said, we can stop announcing.
+    acknowledged = true;
+    stopAnnouncing();
     handleHostMessage(data, hooks);
   });
 
@@ -78,7 +84,45 @@ export function initBridge(hooks: BridgeHooks): void {
   installInteractionTracking();
   installInspector();
 
-  post({ type: 'preview:ready', nonce, protocol: PREVIEW_PROTOCOL_VERSION });
+  announceReady();
+}
+
+/**
+ * Announces readiness until the host answers.
+ *
+ * A single announcement loses a race the frame usually wins: this document has
+ * no network to wait for — the runtime is inlined — so it is listening within a
+ * millisecond or two, while the studio attaches its `message` listener from a
+ * React effect after hydration. On a heavier project the studio is slow enough
+ * that `preview:ready` arrives with nobody listening, is dropped, and the phone
+ * then waits forever on a build that completed: `host:load` sits queued behind a
+ * frame the host still believes is not ready.
+ *
+ * Re-announcing until the first host message arrives makes the handshake
+ * independent of who starts first. It is cheap (a postMessage to the parent),
+ * it stops at the first reply, and it gives up rather than retrying forever.
+ */
+function announceReady(): void {
+  const send = () => post({ type: 'preview:ready', nonce, protocol: PREVIEW_PROTOCOL_VERSION });
+  send();
+
+  let attempts = 0;
+  readyTimer = window.setInterval(() => {
+    attempts += 1;
+    // ~6s of retries. Past that the host is not coming and something else is wrong.
+    if (acknowledged || attempts > 40) {
+      stopAnnouncing();
+      return;
+    }
+    send();
+  }, 150);
+}
+
+function stopAnnouncing(): void {
+  if (readyTimer !== null) {
+    window.clearInterval(readyTimer);
+    readyTimer = null;
+  }
 }
 
 function handleHostMessage(message: HostMessage, hooks: BridgeHooks): void {

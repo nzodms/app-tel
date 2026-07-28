@@ -27,15 +27,19 @@ export function PreviewFrame({
   title: string;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  // Minted before the frame exists so it can travel in the URL.
-  const nonce = useMemo(() => crypto.randomUUID().replace(/-/g, ''), []);
+  // Per *device*, not per component instance: a remount must not change it, or
+  // the registry and the live frame stop agreeing on who is who. See
+  // `PreviewRegistry.nonceForDevice`.
+  const nonce = useMemo(() => previewRegistry.nonceForDevice(deviceId), [deviceId]);
   const src = useMemo(() => `/preview/host?n=${nonce}`, [nonce]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
     previewRegistry.register(deviceId, iframe, nonce);
-    return () => previewRegistry.unregister(deviceId);
+    // Scoped to this exact frame: a StrictMode cleanup must not delete an entry
+    // that a second mount has already replaced.
+    return () => previewRegistry.unregister(deviceId, iframe);
   }, [deviceId, nonce]);
 
   return (
