@@ -7,6 +7,7 @@ import type { DeviceRow } from '@/server/db';
 import { useStudio } from '../context';
 import { Phone } from './phone';
 import { PreviewFrame } from './preview-frame';
+import { BuildErrorCard } from './build-error-card';
 
 /**
  * One phone on the canvas: its label, its chassis, and its live preview.
@@ -134,20 +135,7 @@ export const DeviceNode = memo(function DeviceNode({
 
         {/* Build failure is shown *inside* the phone: that is where you are looking. */}
         {bundle?.status === 'error' ? (
-          <div className="absolute inset-0 z-[55] flex items-end bg-paper-950/72 p-4">
-            <div className="w-full rounded-xl border border-danger-200 bg-paper-0 p-3 shadow-float">
-              <div className="text-[12px] font-semibold text-danger-700">Build failed</div>
-              <pre className="mt-1.5 max-h-[190px] overflow-auto whitespace-pre-wrap break-words font-mono text-[10.5px] leading-[1.5] text-paper-600">
-                {bundle.diagnostics
-                  .slice(0, 4)
-                  .map(
-                    (diagnostic) =>
-                      `${diagnostic.file ?? '?'}${diagnostic.line ? `:${diagnostic.line}` : ''} — ${diagnostic.message}`,
-                  )
-                  .join('\n\n') || bundle.error}
-              </pre>
-            </div>
-          </div>
+          <BuildErrorCard deviceId={device.id} bundle={bundle} />
         ) : null}
 
         {bundle?.status === 'building' ? (

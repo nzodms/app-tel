@@ -270,8 +270,20 @@ export interface Diagnostic {
   file: string | null;
   line: number | null;
   column: number | null;
-  /** `esbuild` for bundle diagnostics, `runtime` for in-preview exceptions. */
-  source: 'esbuild' | 'runtime';
+  /**
+   * `esbuild` for compile diagnostics, `runtime` for exceptions thrown inside the
+   * preview, `transport` for a build request that never reached the compiler.
+   *
+   * `transport` exists because of a real hole: a failing request set the build
+   * status to error but produced no diagnostic, so the toolbar cheerfully read
+   * "0 error(s)" while every phone showed "Build failed". A failure with nothing
+   * to show is still a failure, and has to be counted.
+   *
+   * There is deliberately no `typescript` source: esbuild strips types without
+   * checking them, so a TypeScript bucket would be permanently zero and would
+   * imply a check that does not happen.
+   */
+  source: 'esbuild' | 'runtime' | 'transport';
 }
 
 export type BuildStatus = 'running' | 'success' | 'error';

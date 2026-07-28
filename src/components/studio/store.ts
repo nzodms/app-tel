@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { api, errorText } from '@/lib/api-client';
+import { ApiError, api, errorText } from '@/lib/api-client';
 import { getPreset, deviceGeometry } from '@/lib/devices/presets';
 import { EDGE_CASES } from '@/lib/devices/edge-cases';
 import type { PreviewDeviceContext, PreviewMessage, PreviewNotification, ReplayStep } from '@/lib/preview/protocol';
@@ -126,6 +126,8 @@ interface StudioActions {
 
   /* preview */
   ensureBundle: (ref: BundleRef, force?: boolean) => Promise<BundleState>;
+  /** Restores the newest snapshot that compiles behind a failed build. */
+  recoverLastWorking: (key: string) => Promise<void>;
   rebuildAll: (force?: boolean) => Promise<void>;
   reloadDevice: (deviceId: string) => void;
   resetDevices: (clearShared: boolean) => number;
@@ -162,6 +164,43 @@ interface StudioActions {
 export type StudioStore = StudioState & StudioActions;
 
 const MAX_EVENTS = 400;
+
+/**
+ * Replaces the diagnostics of one source, keeping the others.
+ *
+ * The store holds a single flat list that the Logs panel and the error counter
+ * both read. A rebuild must clear the previous *compile* diagnostics without
+ * discarding runtime exceptions the preview reported, and a failed request must
+ * add itself without wiping either. Filtering by source is what keeps the count
+ * truthful in all three cases.
+ */
+export function mergeDiagnostics(
+  current: Diagnostic[],
+  incoming: Diagnostic[],
+  source: Diagnostic['source'],
+): Diagnostic[] {
+  return [...current.filter((entry) => entry.source !== source), ...incoming];
+}
+
+/** Errors by source, for a counter that can say what kind of error it means. */
+export interface DiagnosticCounts {
+  build: number;
+  runtime: number;
+  transport: number;
+  total: number;
+  warnings: number;
+}
+
+export function countDiagnostics(diagnostics: Diagnostic[]): DiagnosticCounts {
+  const errors = diagnostics.filter((entry) => entry.severity === 'error');
+  return {
+    build: errors.filter((entry) => entry.source === 'esbuild').length,
+    runtime: errors.filter((entry) => entry.source === 'runtime').length,
+    transport: errors.filter((entry) => entry.source === 'transport').length,
+    total: errors.length,
+    warnings: diagnostics.filter((entry) => entry.severity === 'warning').length,
+  };
+}
 
 function emptyChrome(): DeviceChrome {
   return {
@@ -545,8 +584,12 @@ export function createStudioStore(snapshot: StudioSnapshot) {
           [key]: {
             ref,
             status: 'building',
+            // Keep showing whatever is on screen while the new bundle compiles.
             code: existing?.code ?? null,
             hash: existing?.hash ?? null,
+            lastGoodCode: existing?.lastGoodCode ?? existing?.code ?? null,
+            lastGoodHash: existing?.lastGoodHash ?? existing?.hash ?? null,
+            stale: existing?.stale ?? false,
             diagnostics: [],
             durationMs: null,
             bytes: null,
@@ -568,23 +611,39 @@ export function createStudioStore(snapshot: StudioSnapshot) {
           body: { ref: key, force: force ?? false },
         });
 
+        const previous = get().bundles[key];
+
         const next: BundleState = {
           ref,
           status: result.ok ? 'ready' : 'error',
-          code: result.ok ? result.code : null,
-          hash: result.hash,
+          // A failed compile keeps the last code that worked. The phone then shows
+          // the previous app dimmed behind the error instead of going blank, which
+          // is both less alarming and more useful: you can still see what you had.
+          code: result.ok ? result.code : (previous?.lastGoodCode ?? previous?.code ?? null),
+          hash: result.ok ? result.hash : (previous?.lastGoodHash ?? previous?.hash ?? null),
+          lastGoodCode: result.ok ? result.code : (previous?.lastGoodCode ?? previous?.code ?? null),
+          lastGoodHash: result.ok ? result.hash : (previous?.lastGoodHash ?? previous?.hash ?? null),
           diagnostics: result.diagnostics,
           durationMs: result.durationMs,
           bytes: result.bytes,
           error: result.ok ? null : (result.diagnostics[0]?.message ?? 'Build failed'),
+          stale: !result.ok && Boolean(previous?.lastGoodCode ?? previous?.code),
         };
 
         set((state) => ({
           bundles: { ...state.bundles, [key]: next },
-          diagnostics: result.diagnostics,
+          diagnostics: mergeDiagnostics(state.diagnostics, result.diagnostics, 'esbuild'),
           buildStatus: result.ok ? 'success' : 'error',
           buildDurationMs: result.durationMs,
         }));
+
+        // Nothing cached to fall back on — a cold load whose working tree is
+        // broken. Compile the newest snapshot instead so the phone shows the last
+        // version that *did* work rather than an empty screen. It is marked stale,
+        // and the error card says so, so this is never mistaken for current code.
+        if (!result.ok && !next.code && ref === 'working') {
+          void get().recoverLastWorking(key);
+        }
 
         if (next.status === 'ready' && next.code) {
           for (const device of get().devices) {
@@ -598,21 +657,135 @@ export function createStudioStore(snapshot: StudioSnapshot) {
         }
         return next;
       } catch (error) {
+        const previous = get().bundles[key];
+        const projectId = get().snapshot.project.id;
+
+        /*
+         * The request never reached the compiler — a 404, a 503, an offline
+         * browser. This used to write `diagnostics: []` and leave the store's
+         * top-level `diagnostics` untouched, so the toolbar read "0 error(s)"
+         * while every phone showed "Build failed". A failure with nothing to
+         * report is still a failure: it becomes a diagnostic of its own, naming
+         * the request that failed so it is actually debuggable.
+         */
+        const detail =
+          error instanceof ApiError
+            ? `${error.status || 'network'} — ${error.message}`
+            : errorText(error);
+
+        const diagnostic: Diagnostic = {
+          severity: 'error',
+          message: `Could not reach the build service: ${detail} (POST /api/projects/${projectId}/preview/build)`,
+          file: null,
+          line: null,
+          column: null,
+          source: 'transport',
+        };
+
         const failed: BundleState = {
           ref,
           status: 'error',
-          code: null,
-          hash: null,
-          diagnostics: [],
+          // Same reasoning as above: keep whatever was last running.
+          code: previous?.lastGoodCode ?? previous?.code ?? null,
+          hash: previous?.lastGoodHash ?? previous?.hash ?? null,
+          lastGoodCode: previous?.lastGoodCode ?? previous?.code ?? null,
+          lastGoodHash: previous?.lastGoodHash ?? previous?.hash ?? null,
+          diagnostics: [diagnostic],
           durationMs: null,
           bytes: null,
-          error: errorText(error),
+          error: diagnostic.message,
+          stale: Boolean(previous?.lastGoodCode ?? previous?.code),
         };
+
         set((state) => ({
           bundles: { ...state.bundles, [key]: failed },
+          diagnostics: mergeDiagnostics(state.diagnostics, [diagnostic], 'transport'),
           buildStatus: 'error',
         }));
+
+        if (!failed.code && ref === 'working') void get().recoverLastWorking(key);
         return failed;
+      }
+    },
+
+    /**
+     * Puts the last version that compiled back on screen behind a failed build.
+     *
+     * Tries snapshots newest-first and stops at the first that compiles. Whatever
+     * it finds is stored as `lastGoodCode` with `stale: true`, so the phone shows
+     * a working app while the error card keeps saying the current sources are
+     * broken — the project is visibly not lost, and nothing pretends to be fresh.
+     *
+     * Silent by design: this runs *because* something already failed, and a
+     * failure to recover must not bury the error that caused it.
+     */
+    recoverLastWorking: async (key) => {
+      // Newest first, by sequence — the array's order is not guaranteed, and
+      // guessing it wrong silently restores the oldest snapshot instead of the
+      // newest, which is worse than not restoring at all.
+      const versions = [...get().versions].sort((a, b) => b.sequence - a.sequence);
+      for (const version of versions.slice(0, 3)) {
+        try {
+          const result = await api<{ ok: boolean; code: string; hash: string }>(
+            `/api/projects/${get().snapshot.project.id}/preview/build`,
+            { body: { ref: version.id } },
+          );
+          if (!result.ok || !result.code) continue;
+
+          /*
+           * No status guard here. Two phones on the same ref each trigger a build,
+           * so by the time this resolves the bundle may have flipped back to
+           * `building` for the second attempt — and an over-strict guard silently
+           * threw the recovery away, which is how this first shipped broken.
+           *
+           * Recording `lastGoodCode` is always right whatever the current status.
+           * Only the visible `code` is conditional: a bundle that has since gone
+           * green must not be overwritten with an older snapshot.
+           */
+          set((state) => {
+            const current = state.bundles[key];
+            if (!current) return state;
+            const showRecovered = current.status !== 'ready';
+            return {
+              bundles: {
+                ...state.bundles,
+                [key]: {
+                  ...current,
+                  code: showRecovered ? result.code : current.code,
+                  hash: showRecovered ? result.hash : current.hash,
+                  lastGoodCode: result.code,
+                  lastGoodHash: result.hash,
+                  stale: showRecovered ? true : current.stale,
+                  ...(showRecovered ? { recoveredFrom: version.label } : {}),
+                },
+              },
+            };
+          });
+
+          if (get().bundles[key]?.status !== 'ready') {
+            const state = get();
+            for (const device of state.devices) {
+              if (String(device.versionId ?? 'working') !== key) continue;
+              // `host:init` first, exactly as the `preview:ready` path does. A
+              // `host:load` that arrives without a context is dropped by the
+              // runtime, which is why the recovered bundle compiled fine and the
+              // phone still showed the boot placeholder.
+              previewRegistry.post(device.id, {
+                type: 'host:init',
+                context: state.contextFor(device),
+                shared: state.shared,
+              });
+              previewRegistry.post(device.id, {
+                type: 'host:load',
+                code: result.code,
+                hash: result.hash,
+              });
+            }
+          }
+          return;
+        } catch {
+          // Try the next snapshot back.
+        }
       }
     },
 

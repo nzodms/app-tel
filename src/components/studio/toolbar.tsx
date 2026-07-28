@@ -24,6 +24,7 @@ import { Badge, Button, IconButton, StatusDot } from '@/components/ui/primitives
 import { MenuItem, MenuLabel, Popover } from '@/components/ui/popover';
 import { Logo } from '@/components/brand/logo';
 import { useStudio, useStudioApi } from './context';
+import { countDiagnostics } from './store';
 import { ProjectSwitcher } from './project-switcher';
 import { canvasApi } from './canvas/canvas-api';
 import { alignRects, distributeRects, tidyRects } from './canvas/geometry';
@@ -36,15 +37,72 @@ import { deviceGeometry, getPreset } from '@/lib/devices/presets';
  * imperative handle (never through React state, so they cannot cause a re-render
  * mid-gesture); everything else goes through the store.
  */
+/**
+ * The build status, and what it is allowed to claim.
+ *
+ * This used to render `0 error(s)` whenever a build failed without producing a
+ * compile diagnostic — which is exactly what a failed *request* does. The count
+ * now comes from `countDiagnostics`, and a failure with no diagnostic is still
+ * reported as a failure rather than as zero. Clicking opens the Logs panel on
+ * the actual diagnostic.
+ */
+function BuildStatusBadge() {
+  const buildStatus = useStudio((state) => state.buildStatus);
+  const buildDurationMs = useStudio((state) => state.buildDurationMs);
+  const diagnostics = useStudio((state) => state.diagnostics);
+  const bundles = useStudio((state) => state.bundles);
+  const setLeftTab = useStudio((state) => state.setLeftTab);
+
+  const counts = countDiagnostics(diagnostics);
+  // A phone showing a failed bundle outranks an optimistic top-level status.
+  const anyBundleFailed = Object.values(bundles).some((bundle) => bundle.status === 'error');
+  const failed = buildStatus === 'error' || anyBundleFailed;
+  const stale = !failed && Object.values(bundles).some((bundle) => bundle.stale);
+
+  const tone = failed ? 'danger' : buildStatus === 'building' ? 'caution' : stale ? 'caution' : 'positive';
+
+  const label = (() => {
+    if (buildStatus === 'building') return 'Building';
+    if (failed) {
+      if (counts.total === 0) return 'Build failed';
+      const parts = [
+        counts.build > 0 ? `${counts.build} build` : null,
+        counts.runtime > 0 ? `${counts.runtime} runtime` : null,
+        counts.transport > 0 ? `${counts.transport} request` : null,
+      ].filter(Boolean);
+      return `${counts.total} error${counts.total === 1 ? '' : 's'}${parts.length > 1 ? ` (${parts.join(', ')})` : ''}`;
+    }
+    if (stale) return 'Preview outdated';
+    if (counts.runtime > 0) return `${counts.runtime} runtime error${counts.runtime === 1 ? '' : 's'}`;
+    return buildDurationMs ? `Built in ${buildDurationMs}ms` : 'Ready';
+  })();
+
+  const clickable = failed || counts.total > 0;
+
+  return (
+    <button
+      type="button"
+      onClick={() => clickable && setLeftTab('logs')}
+      disabled={!clickable}
+      data-testid="build-status"
+      data-build-state={failed ? 'failed' : buildStatus === 'building' ? 'building' : stale ? 'stale' : 'ready'}
+      title={clickable ? 'Open the diagnostics' : undefined}
+      className={cn('shrink-0 rounded-md', clickable && 'cursor-pointer hover:brightness-[0.97]')}
+    >
+      <Badge tone={tone}>
+        <StatusDot tone={tone} pulse={buildStatus === 'building'} />
+        {label}
+      </Badge>
+    </button>
+  );
+}
+
 export function Toolbar({ onOpenShare }: { onOpenShare: () => void }) {
   const store = useStudioApi();
   const project = useStudio((state) => state.snapshot.project);
   const versions = useStudio((state) => state.versions);
   const journeys = useStudio((state) => state.journeys ?? []);
   const devices = useStudio((state) => state.devices);
-  const buildStatus = useStudio((state) => state.buildStatus);
-  const buildDurationMs = useStudio((state) => state.buildDurationMs);
-  const diagnostics = useStudio((state) => state.diagnostics);
   const compare = useStudio((state) => state.compare);
   const setCompare = useStudio((state) => state.setCompare);
   const inspectMode = useStudio((state) => state.inspectMode);
@@ -85,9 +143,6 @@ export function Toolbar({ onOpenShare }: { onOpenShare: () => void }) {
     window.setTimeout(() => canvasApi.get()?.fit(), 60);
   };
 
-  const buildTone =
-    buildStatus === 'error' ? 'danger' : buildStatus === 'building' ? 'caution' : 'positive';
-
   return (
     <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-paper-200 bg-paper-0 px-2.5">
       <Link
@@ -106,16 +161,7 @@ export function Toolbar({ onOpenShare }: { onOpenShare: () => void }) {
         />
       </div>
 
-      <Badge tone={buildTone} className="shrink-0">
-        <StatusDot tone={buildTone} pulse={buildStatus === 'building'} />
-        {buildStatus === 'building'
-          ? 'Building'
-          : buildStatus === 'error'
-            ? `${diagnostics.filter((entry) => entry.severity === 'error').length} error(s)`
-            : buildDurationMs
-              ? `Built in ${buildDurationMs}ms`
-              : 'Ready'}
-      </Badge>
+      <BuildStatusBadge />
 
       <span className="mx-0.5 h-5 w-px bg-paper-200" />
 

@@ -58,10 +58,24 @@ export interface BundleState {
   status: 'idle' | 'building' | 'ready' | 'error';
   code: string | null;
   hash: string | null;
+  /**
+   * The last bundle that compiled, kept across failures.
+   *
+   * A failed build used to set `code: null`, which blanked the phone — the app
+   * looked lost when in fact only the newest edit was broken. Keeping the last
+   * good code means the previous app stays on screen (dimmed, behind the error)
+   * and "Restore last working version" has something real to restore.
+   */
+  lastGoodCode: string | null;
+  lastGoodHash: string | null;
   diagnostics: Diagnostic[];
   durationMs: number | null;
   bytes: number | null;
   error: string | null;
+  /** True when what the phone is showing is older than the current sources. */
+  stale: boolean;
+  /** Label of the snapshot recovered onto the screen after a failure, if any. */
+  recoveredFrom?: string;
 }
 
 export type LeftTab = 'files' | 'code' | 'logs' | 'versions' | 'claude' | 'comments';
