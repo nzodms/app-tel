@@ -138,6 +138,18 @@ export function friendlyError(error: unknown): FriendlyError {
         ...(error.reference ? { reference: error.reference } : {}),
         retryable: true,
       };
+    case 'user_bootstrap_failed':
+    case 'foreign_key_violation':
+      return {
+        // Safe but exact: it says what failed without exposing the constraint,
+        // and confirms nothing was left behind — which is true, because sign-up
+        // compensates. The rest of the product is in English; switch this pair of
+        // strings if that changes.
+        message: 'Could not set up your workspace.',
+        hint: 'Nothing was saved. Try again — if it keeps happening, quote the reference below.',
+        ...(error.reference ? { reference: error.reference } : {}),
+        retryable: true,
+      };
     case 'schema_missing':
     case 'configuration_error':
       return {

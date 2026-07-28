@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { badRequest, conflict, unauthorized } from '../core/errors';
 import { hashSecret, sha256, verifySecret } from '../core/crypto';
 import { newId, newToken, slugify } from '../core/ids';
+import { ensureUserBootstrap } from './bootstrap';
 import { DEFAULT_PREFERENCES } from '../db';
 import type { Id, SessionRow, Store, UserPreferences, UserRow, WorkspaceRow } from '../db';
 
@@ -63,11 +64,25 @@ export interface SignUpResult {
   expiresAt: string;
 }
 
-/** Creates the user, their personal workspace and an authenticated session. */
+/** Steps a caller can log as they complete. See the sign-up route. */
+export type SignUpStep =
+  | 'user_created'
+  | 'workspace_created'
+  | 'membership_created'
+  | 'active_workspace_set'
+  | 'session_created';
+
+/**
+ * Creates the user, their personal workspace and an authenticated session.
+ *
+ * The order of the writes is the whole point — see the comment on
+ * `activeWorkspaceId` below.
+ */
 export async function signUp(
   store: Store,
   input: z.infer<typeof signUpSchema>,
   userAgent: string | null,
+  onStep?: (step: SignUpStep) => void,
 ): Promise<SignUpResult> {
   const { email, password, name } = signUpSchema.parse(input);
 
@@ -76,10 +91,11 @@ export async function signUp(
 
   const { hash, salt } = await hashSecret(password);
   const now = new Date().toISOString();
+  const userId = newId('usr');
   const workspaceId = newId('wsp');
 
   const user: UserRow = {
-    id: newId('usr'),
+    id: userId,
     email,
     name,
     passwordHash: hash,
@@ -92,7 +108,14 @@ export async function signUp(
     onboardingCompletedAt: null,
     onboardingStep: 0,
     onboardingDraft: {},
-    activeWorkspaceId: workspaceId,
+    // Deliberately null on insert. `users.active_workspace_id` is a foreign key to
+    // `workspaces.id`, and `workspaces.owner_id` is a foreign key back to
+    // `users.id` — a cycle. Writing the id here before the workspace row exists
+    // is what made every production sign-up fail with SQLSTATE 23503
+    // (users_active_workspace_id_fkey). It never showed up locally: the JSON
+    // driver has no foreign keys, so it accepted the dangling reference happily.
+    // Step 5 below sets it, once the workspace it points at is really there.
+    activeWorkspaceId: null,
     activeProjectId: null,
     preferences: DEFAULT_PREFERENCES,
   };
@@ -101,30 +124,88 @@ export async function signUp(
     id: workspaceId,
     name: `${name.split(' ')[0] ?? name}'s workspace`,
     slug: slugify(`${name}-workspace`, 'workspace'),
-    ownerId: user.id,
+    ownerId: userId,
     createdAt: now,
     updatedAt: now,
   };
 
-  await store.transaction(async (tx) => {
-    await tx.insert('users', user);
-    await tx.insert('workspaces', workspace);
-    await tx.insert('workspaceMembers', {
-      id: newId('wsm'),
-      workspaceId: workspace.id,
-      userId: user.id,
-      role: 'owner',
-      createdAt: now,
-    });
-  });
+  const membership = {
+    id: newId('wsm'),
+    workspaceId,
+    userId,
+    role: 'owner' as const,
+    createdAt: now,
+  };
 
-  const session = await createSession(store, user.id, userAgent);
+  /*
+   * Ordered so that every row only ever references rows that already exist.
+   *
+   * `store.transaction` is a real transaction on the local driver and a plain
+   * sequence on Supabase — the REST API cannot express a multi-statement
+   * transaction. So correctness cannot rest on rollback: the order has to be
+   * valid step by step, and a failure part-way has to clean up after itself.
+   * That is what `onStep` reports and the catch block undoes.
+   */
+  try {
+    await store.transaction(async (tx) => {
+      await tx.insert('users', user);            // 2. user, no workspace pointer
+      onStep?.('user_created');
+
+      await tx.insert('workspaces', workspace);  // 3. workspace owned by the user
+      onStep?.('workspace_created');
+
+      await tx.insert('workspaceMembers', membership); // 4. owner membership
+      onStep?.('membership_created');
+    });
+
+    // 5. Only now does the pointer have something valid to point at.
+    await store.update('users', userId, { activeWorkspaceId: workspaceId, updatedAt: now });
+    onStep?.('active_workspace_set');
+  } catch (error) {
+    // Compensation. Without a transaction on Supabase, a failure at step 3 or 4
+    // would otherwise leave a user row whose email address is taken forever by an
+    // account that cannot be used. Best-effort and in reverse order.
+    await rollbackBootstrap(store, { userId, workspaceId, membershipId: membership.id });
+    throw error;
+  }
+
+  // 6. The session comes last: it is the thing that says "this account is ready",
+  //    and handing one out before the workspace exists is how someone ends up
+  //    signed in to an account that cannot create anything.
+  const session = await createSession(store, userId, userAgent);
+  onStep?.('session_created');
+
   return {
-    user: toPublicUser(user),
+    user: toPublicUser({ ...user, activeWorkspaceId: workspaceId }),
     workspace,
     sessionToken: session.token,
     expiresAt: session.expiresAt,
   };
+}
+
+/**
+ * Undoes a partial sign-up.
+ *
+ * Every delete is independent and failure-tolerant: we are already on an error
+ * path, and a cleanup that throws would replace a useful error with a useless
+ * one. Anything that survives here is repaired by `ensureUserBootstrap` on the
+ * next sign-in instead.
+ */
+async function rollbackBootstrap(
+  store: Store,
+  ids: { userId: Id; workspaceId: Id; membershipId: Id },
+): Promise<void> {
+  for (const undo of [
+    () => store.remove('workspaceMembers', ids.membershipId),
+    () => store.remove('workspaces', ids.workspaceId),
+    () => store.remove('users', ids.userId),
+  ]) {
+    try {
+      await undo();
+    } catch {
+      // Nothing actionable: the row may simply never have been written.
+    }
+  }
 }
 
 export async function signIn(
@@ -142,6 +223,12 @@ export async function signIn(
 
   const ok = await verifySecret(parsed.data.password, user.passwordHash, user.passwordSalt);
   if (!ok) throw genericFailure;
+
+  // The recovery point for an account whose sign-up half-succeeded: a missing
+  // workspace or owner membership is rebuilt here rather than leaving the person
+  // permanently locked out of an address they already registered. Idempotent, so
+  // it costs three reads on the overwhelmingly common healthy path.
+  await ensureUserBootstrap(store, user.id);
 
   const session = await createSession(store, user.id, userAgent);
   return {

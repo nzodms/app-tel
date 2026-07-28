@@ -56,6 +56,32 @@ export function translateStoreError(
     );
   }
 
+  // A reference to a row that is not there. Ours to fix, and only ever a
+  // symptom of writing rows in the wrong order — so it must not be reported as
+  // an outage, which would tell the caller to retry something that can only fail
+  // the same way. This is the class that broke every production sign-up:
+  // users.active_workspace_id → workspaces.id written before the workspace.
+  if (code === '23503' || /violates foreign key constraint/i.test(message)) {
+    const constraint = /constraint "([^"]+)"/.exec(message)?.[1];
+    return new AppError(
+      'foreign_key_violation',
+      `${operation} ${table} referenced a row that does not exist${constraint ? ` (${constraint})` : ''}.`,
+      { operation, table, sqlstate: '23503', ...(constraint ? { constraint } : {}) },
+    );
+  }
+
+  // A duplicate on a unique index. Also ours, and usually means a caller should
+  // have checked first or should be treating the write as idempotent.
+  if (code === '23505' || /duplicate key value violates unique constraint/i.test(message)) {
+    const constraint = /constraint "([^"]+)"/.exec(message)?.[1];
+    return new AppError('conflict', `That ${table.replace(/_/g, ' ')} already exists.`, {
+      operation,
+      table,
+      sqlstate: '23505',
+      ...(constraint ? { constraint } : {}),
+    });
+  }
+
   // supabase-js surfaces connectivity problems as a plain TypeError from fetch.
   if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|socket hang up|getaddrinfo/i.test(message)) {
     return new AppError(

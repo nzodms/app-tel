@@ -19,6 +19,15 @@ export type AppErrorCode =
   | 'storage_unavailable'
   /** The database is reachable but does not have the schema — a migration is missing. */
   | 'schema_missing'
+  /**
+   * A write referenced a row that does not exist, or removed one still referenced.
+   * Always a bug in the order of our writes, never an outage — which is exactly
+   * why it must not be filed under `storage_unavailable`: that reads as "try
+   * again later", and retrying a bad write order fails identically forever.
+   */
+  | 'foreign_key_violation'
+  /** Creating the account's workspace and membership did not complete. */
+  | 'user_bootstrap_failed'
   | 'internal';
 
 const STATUS: Record<AppErrorCode, number> = {
@@ -37,6 +46,9 @@ const STATUS: Record<AppErrorCode, number> = {
   configuration_error: 503,
   storage_unavailable: 503,
   schema_missing: 503,
+  // 500, not 503: our bug, and nothing an operator or a retry can fix.
+  foreign_key_violation: 500,
+  user_bootstrap_failed: 500,
   internal: 500,
 };
 
@@ -52,6 +64,9 @@ export const CLIENT_ERROR_CODES = {
   EMAIL_ALREADY_EXISTS: 'conflict',
   DATABASE_UNAVAILABLE: 'storage_unavailable',
   DATABASE_SCHEMA_MISSING: 'schema_missing',
+  FOREIGN_KEY_VIOLATION: 'foreign_key_violation',
+  USER_BOOTSTRAP_FAILED: 'user_bootstrap_failed',
+  WORKSPACE_CREATION_FAILED: 'user_bootstrap_failed',
   AUTH_CONFIGURATION_ERROR: 'configuration_error',
   RATE_LIMITED: 'rate_limited',
   INTERNAL_ERROR: 'internal',
@@ -94,6 +109,10 @@ export const storageUnavailable = (
 ) => new AppError('storage_unavailable', message, details);
 export const schemaMissing = (message: string, details?: Record<string, unknown>) =>
   new AppError('schema_missing', message, details);
+export const userBootstrapFailed = (
+  message = 'Could not set up your workspace.',
+  details?: Record<string, unknown>,
+) => new AppError('user_bootstrap_failed', message, details);
 
 export function isAppError(error: unknown): error is AppError {
   return error instanceof AppError;
