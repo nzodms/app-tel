@@ -10,7 +10,8 @@ import type {
   ProjectRow,
   Store,
 } from '../db';
-import { isPresetId, DEFAULT_PRESET_ID } from '@/lib/devices/presets';
+import { isPresetId, DEFAULT_PRESET_ID, deviceGeometry, getPreset } from '@/lib/devices/presets';
+import { arrangeDevices } from '@/lib/devices/layout';
 import {
   PROJECT_TEMPLATES,
   getTemplate,
@@ -163,7 +164,36 @@ export async function createProject(
   }));
 
   const deviceLayout = options.devices ?? template.devices;
-  const devices: DeviceRow[] = deviceLayout.slice(0, LIMITS.maxDevicesPerProject).map(
+  const placed = deviceLayout.slice(0, LIMITS.maxDevicesPerProject);
+
+  /*
+   * Positions are computed, not copied from the template.
+   *
+   * A template's x/y are arbitrary numbers someone typed while writing it — they
+   * are not a considered layout, and they do not know how many devices the
+   * project ends up with or what shape the canvas is. Running them through the
+   * same layout engine the canvas uses means a project is well composed the
+   * moment it opens, for any template and any device count, and it leaves
+   * `needsArrange` free to stay conservative about layouts a person chose.
+   */
+  const arranged = new Map(
+    arrangeDevices({
+      devices: placed.map((device, index) => {
+        const geometry = deviceGeometry(
+          getPreset(isPresetId(device.presetId) ? device.presetId : DEFAULT_PRESET_ID),
+          'portrait',
+        );
+        return {
+          id: String(index),
+          role: device.role,
+          width: geometry.chassis.width,
+          height: geometry.chassis.height,
+        };
+      }),
+    }).map((position) => [position.id, position]),
+  );
+
+  const devices: DeviceRow[] = placed.map(
     (device, index) => ({
       id: newId('dev'),
       projectId,
@@ -173,8 +203,8 @@ export async function createProject(
       role: device.role,
       userLabel: device.userLabel,
       versionId: null,
-      x: device.x,
-      y: device.y,
+      x: arranged.get(String(index))?.x ?? device.x,
+      y: arranged.get(String(index))?.y ?? device.y,
       zIndex: index + 1,
       theme: 'light',
       locale: 'en',

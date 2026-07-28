@@ -17,6 +17,8 @@ import { IDLE_ISLAND, type IslandContent } from './canvas/dynamic-island';
 import type { SystemSheet } from './canvas/overlays';
 import { DEFAULT_STATUS, type StatusBarState } from './canvas/status-bar';
 import { previewRegistry } from './preview-registry';
+import { canvasApi } from './canvas/canvas-api';
+import { arrangeDevices as arrangeDeviceRects, type LayoutPreset } from '@/lib/devices/layout';
 import type {
   BundleRef,
   BundleState,
@@ -122,6 +124,15 @@ interface StudioActions {
   duplicateDevice: (deviceId: string) => Promise<void>;
   removeDevice: (deviceId: string) => Promise<void>;
   commitPositions: (positions: { id: string; x: number; y: number }[]) => Promise<void>;
+  /**
+   * Re-lays out the canvas and persists the result.
+   *
+   * The move is animated by the canvas, which writes transforms on the device
+   * nodes — ancestors of the iframes, never the iframes themselves. Roles,
+   * pinned versions, orientation, edge cases and the running app are all
+   * untouched: this only changes x and y.
+   */
+  arrangeDevices: (preset?: LayoutPreset) => Promise<void>;
   applyLocalPositions: (positions: { id: string; x: number; y: number }[]) => void;
 
   /* preview */
@@ -524,6 +535,37 @@ export function createStudioStore(snapshot: StudioSnapshot) {
         set({ devices: previous });
         get().notify('error', errorText(error));
       }
+    },
+
+    arrangeDevices: async (preset) => {
+      const state = get();
+      const rects = state.devices.map((device) => {
+        const geometry = deviceGeometry(getPreset(device.presetId), device.orientation);
+        return {
+          id: device.id,
+          role: device.role,
+          x: device.x,
+          y: device.y,
+          width: geometry.chassis.width,
+          height: geometry.chassis.height,
+        };
+      });
+
+      const aspect = canvasApi.viewportAspect();
+      const positions = arrangeDeviceRects({
+        devices: rects,
+        ...(preset ? { preset } : {}),
+        ...(aspect !== null ? { canvasAspect: aspect } : {}),
+        roleOrder: state.roles.map((role) => role.slug),
+      });
+      // `free` and an empty canvas both return nothing, and both mean "move nothing".
+      if (positions.length === 0) return;
+
+      // Glide, then persist. The canvas animates the device nodes — ancestors of
+      // the iframes — so every preview keeps running through the move.
+      canvasApi.get()?.animateTo(positions);
+      await state.commitPositions(positions);
+      window.setTimeout(() => canvasApi.get()?.fit(), 300);
     },
 
     applyLocalPositions: (positions) =>

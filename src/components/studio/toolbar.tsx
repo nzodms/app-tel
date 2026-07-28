@@ -28,6 +28,7 @@ import { countDiagnostics } from './store';
 import { ProjectSwitcher } from './project-switcher';
 import { canvasApi } from './canvas/canvas-api';
 import { alignRects, distributeRects, tidyRects } from './canvas/geometry';
+import { LAYOUT_PRESETS, type LayoutPreset } from '@/lib/devices/layout';
 import { deviceGeometry, getPreset } from '@/lib/devices/presets';
 
 /**
@@ -121,6 +122,11 @@ export function Toolbar({ onOpenShare }: { onOpenShare: () => void }) {
 
   const [zoom, setZoom] = useState(1);
   useEffect(() => canvasApi.subscribe(setZoom), []);
+
+  // Auto arrange and the named presets both go through the store, which computes
+  // the layout, animates the move and persists it. Positions only — role, pinned
+  // version, orientation and the running app are untouched.
+  const arrange = (preset?: LayoutPreset) => store.getState().arrangeDevices(preset);
 
   const layout = (mode: 'tidy' | 'row' | 'align-top' | 'align-left') => {
     const rects = store.getState().devices.map((device) => {
@@ -334,7 +340,7 @@ export function Toolbar({ onOpenShare }: { onOpenShare: () => void }) {
         </IconButton>
 
         <Popover
-          width={210}
+          width={244}
           align="end"
           trigger={({ toggle }) => (
             <IconButton label="Arrange devices" onClick={toggle}>
@@ -344,23 +350,31 @@ export function Toolbar({ onOpenShare }: { onOpenShare: () => void }) {
         >
           {({ close }) => (
             <div>
-              <MenuLabel>Arrange {devices.length} device(s)</MenuLabel>
+              <MenuLabel>Auto arrange</MenuLabel>
               <MenuItem
                 onClick={() => {
-                  layout('tidy');
+                  void arrange();
                   close();
                 }}
+                hint={`${devices.length}`}
               >
-                Tidy into a grid
+                Arrange for {devices.length} device{devices.length === 1 ? '' : 's'}
               </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  layout('row');
-                  close();
-                }}
-              >
-                Distribute in a row
-              </MenuItem>
+
+              <MenuLabel>Layout</MenuLabel>
+              {LAYOUT_PRESETS.filter((preset) => preset.id !== 'free').map((preset) => (
+                <MenuItem
+                  key={preset.id}
+                  onClick={() => {
+                    void arrange(preset.id);
+                    close();
+                  }}
+                >
+                  {preset.label}
+                </MenuItem>
+              ))}
+
+              <MenuLabel>Align</MenuLabel>
               <MenuItem
                 onClick={() => {
                   layout('align-top');

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { cn } from '@/lib/cn';
 import { deviceGeometry, getPreset } from '@/lib/devices/presets';
+import { needsArrange } from '@/lib/devices/layout';
 import type { DeviceRow } from '@/server/db';
 import { useStudio, useStudioApi } from '../context';
 import { canvasApi } from './canvas-api';
@@ -139,6 +140,30 @@ export function Canvas() {
       },
       fit,
       center: fit,
+      animateTo(positions, durationMs = 260) {
+        // Reduced motion is honoured by the CSS override in globals.css, which
+        // collapses the duration; nothing here needs a second code path.
+        const nodes = positions
+          .map((position) => ({ position, node: nodesRef.current.get(position.id) }))
+          .filter((entry): entry is { position: typeof entry.position; node: HTMLDivElement } =>
+            Boolean(entry.node),
+          );
+
+        for (const { node } of nodes) {
+          node.style.transition = `transform ${durationMs}ms var(--ease-out-quint)`;
+        }
+        // Next frame, so the browser has the starting transform before the
+        // transition property applies — otherwise it jumps.
+        requestAnimationFrame(() => {
+          for (const { position, node } of nodes) {
+            node.style.transform = `translate3d(${position.x}px, ${position.y}px, 0)`;
+          }
+        });
+        window.setTimeout(() => {
+          // Back to instant, so the next drag tracks the pointer exactly.
+          for (const { node } of nodes) node.style.transition = '';
+        }, durationMs + 40);
+      },
       focusDevice(deviceId) {
         const viewport = viewportRef.current;
         const device = store.getState().devices.find((entry) => entry.id === deviceId);
@@ -153,19 +178,54 @@ export function Canvas() {
       getZoom() {
         return viewRef.current.scale;
       },
+      viewportAspect() {
+        const viewport = viewportRef.current;
+        if (!viewport || viewport.clientHeight === 0) return null;
+        return viewport.clientWidth / viewport.clientHeight;
+      },
     });
 
     return () => canvasApi.set(null);
   }, [applyView, rectFor, store]);
 
-  /** Fit once, after the first devices and the viewport size are known. */
+  /**
+   * Arrange once on open if the layout is degenerate, then fit.
+   *
+   * `needsArrange` is deliberately conservative: a layout someone has deliberately
+   * spread out is left exactly as they left it. It only fires for the cases that
+   * read as unset — devices stacked on the same point, overlapping, or flung far
+   * wider than they need to be, which is what a freshly created project looks
+   * like when its template positions do not suit the canvas.
+   *
+   * Nothing here remounts a preview: arranging writes transforms on the device
+   * nodes and persists x/y, and fitting moves the single world wrapper.
+   */
   useEffect(() => {
     if (didInitialFit.current) return;
     const viewport = viewportRef.current;
     if (!viewport || viewport.clientWidth === 0) return;
+    const state = store.getState();
+    if (state.devices.length === 0) return;
     didInitialFit.current = true;
+
+    const rects = state.devices.map((device) => {
+      const geometry = deviceGeometry(getPreset(device.presetId), device.orientation);
+      return {
+        id: device.id,
+        role: device.role,
+        x: device.x,
+        y: device.y,
+        width: geometry.chassis.width,
+        height: geometry.chassis.height,
+      };
+    });
+
+    if (needsArrange(rects)) {
+      void state.arrangeDevices();
+      return;
+    }
     canvasApi.get()?.fit();
-  }, [devices.length]);
+  }, [devices.length, store]);
 
   /* ------------------------------------------------------------------ zoom */
 

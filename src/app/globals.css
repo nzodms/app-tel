@@ -85,16 +85,67 @@
   --shadow-panel: 0 1px 2px rgb(16 20 26 / 0.04), 0 4px 12px rgb(16 20 26 / 0.04);
   --shadow-float:
     0 1px 2px rgb(16 20 26 / 0.06), 0 8px 24px -4px rgb(16 20 26 / 0.1);
-  --shadow-device:
-    0 1px 1px rgb(10 12 16 / 0.16), 0 8px 16px -6px rgb(10 12 16 / 0.18),
-    0 28px 56px -18px rgb(10 12 16 / 0.28);
+
+  /* Device elevation. The real values live on :root (see --pl-shadow-device*);
+     these are the Tailwind-utility face of the same tokens. Tailwind v4 inlines
+     an @theme value into the utility and only emits it as a custom property if
+     something else references it — so a component that needs an inline
+     box-shadow must read var(--pl-shadow-device), not var(--shadow-device). */
+  --shadow-device: var(--pl-shadow-device);
+  --shadow-device-lift: var(--pl-shadow-device-lift);
 }
 
 @layer base {
   :root {
     color-scheme: light;
-    --pl-canvas-bg: #f1f2f5;
-    --pl-canvas-grid: rgb(16 20 26 / 0.055);
+
+    /* ---- canvas surface ---------------------------------------------------
+       The canvas is the one lit surface in the app; the chrome around it is
+       paper-50. Keeping the canvas a shade deeper and a shade warmer than that
+       cool near-white is what separates "work area" from "background". The
+       shift is hue-only-by-a-hair — still firmly neutral, still correct behind
+       a black phone and behind a white one. */
+
+    /* Bench tone. Was #f1f2f5 (b > r: cool). Same lightness family, mirrored to
+       the warm side so it reads as lit rather than as grey plastic. */
+    --pl-canvas-bg: #f2f1ef;
+    /* Grid ink. Surface texture, not graph paper: faint enough that you read
+       the phones first and only notice the ruling when you look for it. Warm
+       neutral so the lines don't sit cold on the warmed bench. */
+    --pl-canvas-grid: rgb(26 24 21 / 0.034);
+    /* Lighting falloff at the far edge of the canvas — see .pl-canvas-surface.
+       Same ink as the device shadows, so light and shadow agree. */
+    --pl-canvas-shade: rgb(24 22 18 / 0.04);
+
+    /* ---- device elevation -------------------------------------------------
+       A phone is an object lying on that bench, not a card. Three stacked
+       layers in one near-neutral ink: an edge, a contact shadow and an ambient
+       one. Exposed as separate tokens because they are painted on separate
+       elements (a contour that must sit under the side buttons, an ambient
+       caster that must not wash over them), and because Tailwind prunes @theme
+       values — anything a component reads via var() has to be declared here. */
+
+    /* Silhouette. One flat pixel, so a pale chassis still cuts out of a pale
+       canvas at any zoom. Not a shadow: the edge of the object. */
+    --pl-shadow-device-contour: 0 0 0 1px rgb(20 18 16 / 0.15);
+    /* Contact. Tight, dark, almost no offset — "resting on something". */
+    --pl-shadow-device-contact:
+      0 1px 1.5px rgb(20 18 16 / 0.2), 0 3px 6px -2px rgb(20 18 16 / 0.14);
+    /* Ambient. Wide, soft, low alpha — "held above something". */
+    --pl-shadow-device-ambient:
+      0 12px 24px -10px rgb(20 18 16 / 0.16),
+      0 32px 56px -22px rgb(20 18 16 / 0.22);
+    /* The whole resting stack, in paint order. */
+    --pl-shadow-device:
+      var(--pl-shadow-device-contour), var(--pl-shadow-device-contact),
+      var(--pl-shadow-device-ambient);
+    /* Picked up. An *additive* layer to cross-fade over the resting stack, so
+       selecting or dragging costs one composited opacity change instead of a
+       repaint of a 56px blur. Longer throw, no contact layer — it has left the
+       surface. */
+    --pl-shadow-device-lift:
+      0 18px 32px -14px rgb(20 18 16 / 0.16),
+      0 44px 78px -28px rgb(20 18 16 / 0.22);
   }
 
   * {
@@ -193,12 +244,38 @@
 
 @layer utilities {
   /* The canvas backdrop: near-flat with a very quiet grid. Two layers so the
-     grid stays crisp at any zoom without re-rendering. */
+     grid stays crisp at any zoom without re-rendering.
+
+     CONTRACT: exactly two background-image layers, in this order (vertical
+     rules, then horizontal). canvas.tsx drives them from the zoom and writes
+     two comma-separated background-size values and two background-position
+     values — a third layer here would silently inherit a world-space size and
+     position it must not have. Anything else this surface needs goes on the
+     pseudo-element below. */
   .pl-canvas-surface {
     background-color: var(--pl-canvas-bg);
     background-image:
       linear-gradient(to right, var(--pl-canvas-grid) 1px, transparent 1px),
       linear-gradient(to bottom, var(--pl-canvas-grid) 1px, transparent 1px);
+  }
+
+  /* Lighting, not ornament. A screen-space falloff (it does not pan or zoom
+     with the world) so the middle of the canvas reads as the lit part of the
+     bench and the edges settle back toward the chrome — which also quiets the
+     grid exactly where it is densest. Painted first, under the world layer, and
+     transparent to pointers so panning and marquee selection are untouched.
+     Requires a positioned host; canvas.tsx already gives it `relative`. */
+  .pl-canvas-surface::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(
+      118% 88% at 50% 38%,
+      transparent 0%,
+      transparent 45%,
+      var(--pl-canvas-shade) 100%
+    );
   }
 
   .pl-hairline {

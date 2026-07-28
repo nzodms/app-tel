@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { deviceGeometry, getPreset } from '@/lib/devices/presets';
 import { getRole, roleColor } from '@/lib/devices/roles';
 import type { DeviceRow } from '@/server/db';
@@ -8,6 +8,8 @@ import { useStudio } from '../context';
 import { Phone } from './phone';
 import { PreviewFrame } from './preview-frame';
 import { BuildErrorCard } from './build-error-card';
+import { DeviceActionBar } from './device-action-bar';
+import { canvasApi } from './canvas-api';
 
 /**
  * One phone on the canvas: its label, its chassis, and its live preview.
@@ -53,14 +55,32 @@ export const DeviceNode = memo(function DeviceNode({
 
   const badgeTotal = Object.values(chrome?.badges ?? {}).reduce((sum, value) => sum + value, 0);
 
+  // Hover state lives here rather than in the store: it changes on every pointer
+  // move across the canvas and must never cause a render anywhere else.
+  const [hovered, setHovered] = useState(false);
+  // Session-only, deliberately. `DeviceRow` has no `locked` column and nothing
+  // persists one — see the note on `DeviceActionBarProps.locked`.
+  const [locked, setLocked] = useState(false);
+
   return (
     <div
       ref={(node) => registerNode(device.id, node)}
       className="pl-gpu absolute left-0 top-0"
-      style={{ zIndex: selected ? 40 : device.zIndex }}
-      onPointerDown={onPointerDown}
+      style={{ zIndex: selected || hovered ? 40 : device.zIndex }}
+      onPointerDown={locked ? undefined : onPointerDown}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
       data-device-id={device.id}
+      data-locked={locked ? 'true' : undefined}
     >
+      <DeviceActionBar
+        device={device}
+        hovered={hovered}
+        selected={selected}
+        locked={locked}
+        onToggleLock={(_, next) => setLocked(next)}
+        onFocus={(deviceId) => canvasApi.get()?.focusDevice(deviceId)}
+      />
       {/* Label strip: also a drag handle, and the only place with device chrome. */}
       <div
         className="mb-2 flex items-center gap-1.5 pl-1"
