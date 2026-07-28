@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from 'next';
+import { SetupRequired } from '@/components/setup/setup-required';
+import { storeResolution } from '@/server/db';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -19,9 +21,21 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // One gate for every page. `storeResolution()` is a pure read of the
+  // environment and never throws, so this cannot itself become the failure.
+  //
+  // Without it, a deployment with no database renders Next's generic "This page
+  // couldn't load" on every route — `getStore()` throws inside a server
+  // component and nothing there catches it, unlike the API routes, whose wrapper
+  // turns the same error into a classified 503. Same cause, two very different
+  // amounts of help.
+  const resolution = storeResolution();
+
   return (
     <html lang="en">
-      <body className="min-h-dvh antialiased">{children}</body>
+      <body className="min-h-dvh antialiased">
+        {resolution.driver === null ? <SetupRequired resolution={resolution} /> : children}
+      </body>
     </html>
   );
 }
