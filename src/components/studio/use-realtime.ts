@@ -42,6 +42,7 @@ export function useRealtime(projectId: string): void {
       'device.changed',
       'device.removed',
       'event.logged',
+      'events.cleared',
       'device.event',
       'journey.changed',
       'journey.progress',

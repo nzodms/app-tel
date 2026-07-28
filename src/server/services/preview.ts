@@ -110,6 +110,20 @@ export async function buildPreview(
       orderBy: [{ col: 'startedAt', dir: 'desc' }],
     });
     if (latest) {
+      // A cache hit is still an outcome someone asked for. The caller gets it in
+      // the response, but every *other* observer — another tab, the activity feed
+      // watching Claude work — only learns about builds from the bus. Announce the
+      // finish; deliberately not a `buildStarted`, because nothing started.
+      getBus().publish(projectChannel(projectId), RT.buildFinished, {
+        buildId: latest.id,
+        ok: cached.result.ok,
+        hash: cached.result.hash,
+        durationMs: cached.result.durationMs,
+        diagnosticCount: cached.result.diagnostics.length,
+        bytes: cached.result.bytes,
+        cached: true,
+        triggeredBy,
+      });
       return {
         ok: cached.result.ok,
         code: cached.result.code,
@@ -175,6 +189,8 @@ export async function buildPreview(
     durationMs: result.durationMs,
     diagnosticCount: result.diagnostics.length,
     bytes: result.bytes,
+    cached: false,
+    triggeredBy,
   });
 
   await logEvent(store, projectId, {

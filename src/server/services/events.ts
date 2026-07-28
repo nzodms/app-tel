@@ -99,7 +99,7 @@ export async function listEvents(
 
 export async function clearEvents(store: Store, projectId: Id): Promise<number> {
   const removed = await store.removeWhere('deviceEvents', { match: { projectId } });
-  getBus().publish(projectChannel(projectId), RT.eventLogged, { cleared: true });
+  getBus().publish(projectChannel(projectId), RT.eventsCleared, { removed });
   return removed;
 }
 

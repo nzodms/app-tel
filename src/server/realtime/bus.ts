@@ -107,6 +107,13 @@ export const RT = {
   deviceChanged: 'device.changed',
   deviceRemoved: 'device.removed',
   eventLogged: 'event.logged',
+  /**
+   * The whole stream was deleted. Distinct from `eventLogged` because that one
+   * carries a row: a client that receives an append-shaped message with no
+   * `sequence` has no way to tell "cleared" from "malformed", and used to drop
+   * it — leaving Clear log clearing the server and nothing else.
+   */
+  eventsCleared: 'events.cleared',
   deviceEvent: 'device.event',
   journeyChanged: 'journey.changed',
   journeyProgress: 'journey.progress',

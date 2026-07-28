@@ -41,7 +41,11 @@ export async function loadStudioSnapshot(
       previewStatus(store, project.id),
       projectRoles(store, project),
       listConnections(store, user.id),
-      listAuditLogs(store, { userId: user.id, limit: 25 }),
+      // Scoped to this project, not to the account: the Claude panel says "last
+      // tool" next to *this* project's activity, and an unscoped query made it
+      // report a call Claude made in some other project — or claim no tool had
+      // been called when one had, in the project you were not looking at.
+      listAuditLogs(store, { userId: user.id, projectId: project.id, limit: 25 }),
     ]);
 
   const live = connections.filter((connection) => connection.revokedAt === null);

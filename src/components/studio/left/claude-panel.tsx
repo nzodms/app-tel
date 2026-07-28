@@ -29,6 +29,7 @@ export function ClaudePanel() {
   const devices = useStudio((state) => state.devices);
   const threads = useStudio((state) => state.threads);
   const activePath = useStudio((state) => state.activeFilePath);
+  const remoteBuild = useStudio((state) => state.remoteBuild);
 
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -159,7 +160,13 @@ export function ClaudePanel() {
                 </Badge>
               ))}
             </div>
-            {lastCall ? (
+            {remoteBuild ? (
+              <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-paper-600">
+                <StatusDot tone="accent" pulse />
+                {remoteBuild.triggeredBy === 'claude' ? 'Claude is building' : 'A build is running'}
+                {remoteBuild.ref !== 'working' ? ' a pinned version' : ''}…
+              </p>
+            ) : lastCall ? (
               <p className="mt-2 text-[11.5px] text-paper-500">
                 Last tool: <span className="font-medium text-paper-700">{lastCall.tool}</span> ·{' '}
                 {lastCall.result} · {new Date(lastCall.createdAt).toLocaleTimeString()}

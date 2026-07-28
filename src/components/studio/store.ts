@@ -8,7 +8,7 @@ import type { PreviewDeviceContext, PreviewMessage, PreviewNotification, ReplayS
 // From `src/lib`, not the database barrel: importing values out of `@/server/db`
 // pulls the local-store driver — and `node:fs` with it — into the client bundle.
 import { DEFAULT_PREFERENCES, type UserPreferences } from '@/lib/preferences';
-import type { DeviceEventRow, DeviceRow, Diagnostic, JourneyRow } from '@/server/db';
+import type { DeviceEventRow, DeviceRow, Diagnostic, EditorKind, JourneyRow, ProjectRow } from '@/server/db';
 import type { FileSummary, TreeNode } from '@/server/services/files';
 import type { VersionSummary } from '@/server/services/versions';
 import type { ThreadWithComments } from '@/server/services/comments';
@@ -71,6 +71,15 @@ interface StudioState {
   diagnostics: Diagnostic[];
   buildStatus: 'idle' | 'building' | 'success' | 'error';
   buildDurationMs: number | null;
+  /**
+   * A build running on the server that this tab did not start — Claude over MCP,
+   * or a shared link opening one. Null when nothing is running.
+   *
+   * This tab's own builds are deliberately not mirrored here: `bundles[ref]`
+   * already tracks those, and echoing them back would make the studio announce
+   * "Claude is building" every time you press save.
+   */
+  remoteBuild: { buildId: string; triggeredBy: EditorKind; ref: string; startedAt: number } | null;
 
   /* client-only view state */
   leftTab: LeftTab;
@@ -177,6 +186,14 @@ export type StudioStore = StudioState & StudioActions;
 const MAX_EVENTS = 400;
 
 /**
+ * How long "someone else is building" can stand without a matching
+ * `build.finished`. Generous — a cold esbuild on a large project is seconds, not
+ * minutes — but finite, so a dropped stream cannot leave the studio insisting a
+ * build is still running.
+ */
+const REMOTE_BUILD_TIMEOUT_MS = 120_000;
+
+/**
  * Replaces the diagnostics of one source, keeping the others.
  *
  * The store holds a single flat list that the Logs panel and the error counter
@@ -258,6 +275,7 @@ export function createStudioStore(snapshot: StudioSnapshot) {
     diagnostics: snapshot.diagnostics,
     buildStatus: snapshot.lastBuild?.status === 'error' ? 'error' : snapshot.lastBuild ? 'success' : 'idle',
     buildDurationMs: snapshot.lastBuild?.durationMs ?? null,
+    remoteBuild: null,
 
     leftTab: 'files',
     preferences: { ...DEFAULT_PREFERENCES, ...(snapshot.user.preferences ?? {}) },
@@ -1309,6 +1327,9 @@ export function createStudioStore(snapshot: StudioSnapshot) {
           if (row && typeof row === 'object' && 'sequence' in row) state.appendEvent(row);
           break;
         }
+        case 'events.cleared':
+          set({ events: [] });
+          break;
         case 'tree.changed':
         case 'file.created':
         case 'file.deleted':
@@ -1417,8 +1438,55 @@ export function createStudioStore(snapshot: StudioSnapshot) {
           }
           break;
         }
+        case 'build.started': {
+          // Only builds someone *else* started. Ours are already visible as the
+          // phones' own bundle status.
+          const body = payload as { buildId?: string; ref?: string; triggeredBy?: EditorKind };
+          if (body?.buildId && body.triggeredBy && body.triggeredBy !== 'user') {
+            const buildId = body.buildId;
+            set({
+              remoteBuild: {
+                buildId,
+                triggeredBy: body.triggeredBy,
+                ref: body.ref ?? 'working',
+                startedAt: Date.now(),
+              },
+            });
+            // If the finish never arrives — the stream dropped, the server died —
+            // stop claiming a build is running. Only clears this build.
+            setTimeout(() => {
+              if (get().remoteBuild?.buildId === buildId) set({ remoteBuild: null });
+            }, REMOTE_BUILD_TIMEOUT_MS);
+          }
+          break;
+        }
+        case 'build.finished': {
+          // Clear only the build we are actually showing. A second, unrelated
+          // build finishing must not make the running one disappear.
+          const body = payload as { buildId?: string };
+          const running = get().remoteBuild;
+          if (running && body?.buildId === running.buildId) set({ remoteBuild: null });
+          break;
+        }
+        case 'project.changed': {
+          const body = payload as { project?: ProjectRow };
+          if (body?.project) {
+            const next = body.project;
+            set((current) => ({ snapshot: { ...current.snapshot, project: next } }));
+          }
+          break;
+        }
         case 'mcp.activity':
           // The Claude panel reads from `events`, which already received this.
+          break;
+        default:
+          // Published but not consumed yet, on purpose:
+          //   journey.progress — replay is driven locally by `runJourney`; watching
+          //     someone else's replay is not built (docs/STATUS.md).
+          //   share.changed    — the share list comes from the snapshot and is
+          //     re-read on navigation; there is no live list to reconcile.
+          // Anything else arriving here is a name the server publishes and the
+          // client never learned about — a wiring mistake, not a runtime one.
           break;
       }
     },
