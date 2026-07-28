@@ -1,0 +1,26 @@
+{
+  "name": "PadelFlow",
+  "description": "Padel court booking — player and club, on one canvas.",
+  "entry": "src/App.tsx",
+  "roles": [
+    { "slug": "customer", "label": "Player", "user": "Léa Martin" },
+    { "slug": "provider", "label": "Club", "user": "Padel Central" },
+    { "slug": "guest", "label": "Visitor", "user": null }
+  ],
+  "screens": [
+    { "route": "/", "title": "Courts", "role": "customer" },
+    { "route": "/court", "title": "Court detail", "role": "customer" },
+    { "route": "/invite", "title": "Invite players", "role": "customer" },
+    { "route": "/review", "title": "Review & pay", "role": "customer" },
+    { "route": "/status", "title": "Booking status", "role": "customer" },
+    { "route": "/", "title": "Requests", "role": "provider" },
+    { "route": "/request", "title": "Request detail", "role": "provider" },
+    { "route": "/schedule", "title": "Schedule", "role": "provider" }
+  ],
+  "sharedStateKeys": ["padelflow:bookings"],
+  "events": [
+    { "name": "booking.requested", "from": "customer", "to": "provider" },
+    { "name": "booking.accepted", "from": "provider", "to": "customer" },
+    { "name": "booking.declined", "from": "provider", "to": "customer" }
+  ]
+}

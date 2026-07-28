@@ -1,0 +1,15 @@
+{
+  "name": "Starter",
+  "description": "A minimal, role-aware screen to build from.",
+  "entry": "src/App.tsx",
+  "roles": [
+    { "slug": "customer", "label": "Customer", "user": "Alex Moreau" },
+    { "slug": "admin", "label": "Admin", "user": "Ops team" }
+  ],
+  "screens": [
+    { "route": "/", "title": "Home", "role": "customer" },
+    { "route": "/detail", "title": "Detail", "role": "customer" }
+  ],
+  "sharedStateKeys": ["starter:items"],
+  "events": [{ "name": "item.created", "from": "customer", "to": "admin" }]
+}

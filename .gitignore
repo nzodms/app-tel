@@ -1,0 +1,22 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Local data driver storage (dev / self-hosted single node)
+.phonelab-data/
+
+# Monaco assets are copied out of node_modules at install/build time
+public/monaco/
+
+.env
+.env.local
+.env*.local
+
+*.tsbuildinfo
+next-env.d.ts
+
+.DS_Store
+npm-debug.log*
+coverage/

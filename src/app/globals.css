@@ -1,0 +1,214 @@
+@import 'tailwindcss';
+
+/* ============================================================================
+   PhoneLab design tokens
+   ----------------------------------------------------------------------------
+   Calm, precise, high-contrast-where-it-matters. Two surface families:
+   - "paper": the studio chrome (light, near-white, hairline borders)
+   - "slate": code + terminal surfaces (deep, desaturated, never pure black)
+   One accent (azure). Semantics stay muted so the phones are the loudest thing
+   on screen.
+   ========================================================================== */
+@theme {
+  --font-sans:
+    'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', 'JetBrains Mono', 'Menlo', 'Cascadia Mono',
+    'Roboto Mono', monospace;
+
+  /* Neutral ramp — very slightly cool. */
+  --color-paper-0: #ffffff;
+  --color-paper-25: #fcfcfd;
+  --color-paper-50: #f8f9fb;
+  --color-paper-100: #f2f3f6;
+  --color-paper-150: #eceef2;
+  --color-paper-200: #e4e7ec;
+  --color-paper-300: #d3d7de;
+  --color-paper-400: #a8aeb9;
+  --color-paper-500: #7c838f;
+  --color-paper-600: #5b626d;
+  --color-paper-700: #414751;
+  --color-paper-800: #2b3037;
+  --color-paper-900: #191d22;
+  --color-paper-950: #0f1216;
+
+  /* Code / terminal surfaces. */
+  --color-slate-code-0: #1b1f26;
+  --color-slate-code-50: #171b21;
+  --color-slate-code-100: #13171c;
+  --color-slate-code-200: #232830;
+  --color-slate-code-300: #2f353f;
+  --color-slate-code-400: #3d444f;
+  --color-slate-code-text: #d8dde5;
+  --color-slate-code-dim: #8b95a3;
+
+  /* Accent — azure, restrained. */
+  --color-azure-50: #eef5ff;
+  --color-azure-100: #d9e8ff;
+  --color-azure-200: #b9d5ff;
+  --color-azure-300: #85b8ff;
+  --color-azure-400: #4d93fb;
+  --color-azure-500: #2570e8;
+  --color-azure-600: #1657c7;
+  --color-azure-700: #1246a1;
+
+  /* Semantics. */
+  --color-positive-50: #eefbf3;
+  --color-positive-200: #b6e8ca;
+  --color-positive-500: #1a9b5c;
+  --color-positive-700: #0f6f41;
+  --color-caution-50: #fff8ec;
+  --color-caution-200: #f8dfae;
+  --color-caution-500: #c07d10;
+  --color-caution-700: #8f5c07;
+  --color-danger-50: #fef2f2;
+  --color-danger-200: #f6cccc;
+  --color-danger-500: #d13c3c;
+  --color-danger-700: #9d2727;
+
+  /* Role colours for devices — distinguishable, never neon. */
+  --color-role-customer: #2570e8;
+  --color-role-provider: #1a9b5c;
+  --color-role-admin: #7b5bd6;
+  --color-role-courier: #c07d10;
+  --color-role-support: #0f9aa8;
+  --color-role-guest: #7c838f;
+
+  --radius-panel: 10px;
+
+  /* Motion: short, damped, no bounce. */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-quad: cubic-bezier(0.45, 0, 0.55, 1);
+
+  --shadow-hairline: 0 0 0 1px rgb(16 20 26 / 0.06);
+  --shadow-panel: 0 1px 2px rgb(16 20 26 / 0.04), 0 4px 12px rgb(16 20 26 / 0.04);
+  --shadow-float:
+    0 1px 2px rgb(16 20 26 / 0.06), 0 8px 24px -4px rgb(16 20 26 / 0.1);
+  --shadow-device:
+    0 1px 1px rgb(10 12 16 / 0.16), 0 8px 16px -6px rgb(10 12 16 / 0.18),
+    0 28px 56px -18px rgb(10 12 16 / 0.28);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --pl-canvas-bg: #f1f2f5;
+    --pl-canvas-grid: rgb(16 20 26 / 0.055);
+  }
+
+  * {
+    border-color: var(--color-paper-200);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-paper-50);
+    color: var(--color-paper-900);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Focus: visible but not chunky. */
+  :focus-visible {
+    outline: 2px solid var(--color-azure-400);
+    outline-offset: 1px;
+    border-radius: 3px;
+  }
+
+  ::selection {
+    background: var(--color-azure-200);
+  }
+
+  /* Thin, unobtrusive scrollbars in panels. */
+  .pl-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-paper-300) transparent;
+  }
+  .pl-scroll::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  .pl-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .pl-scroll::-webkit-scrollbar-thumb {
+    background: var(--color-paper-300);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .pl-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--color-paper-400);
+    background-clip: content-box;
+  }
+  .pl-scroll-dark {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-slate-code-400) transparent;
+  }
+  .pl-scroll-dark::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  .pl-scroll-dark::-webkit-scrollbar-thumb {
+    background: var(--color-slate-code-400);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@keyframes pl-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+@layer utilities {
+  /* The canvas backdrop: near-flat with a very quiet grid. Two layers so the
+     grid stays crisp at any zoom without re-rendering. */
+  .pl-canvas-surface {
+    background-color: var(--pl-canvas-bg);
+    background-image:
+      linear-gradient(to right, var(--pl-canvas-grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--pl-canvas-grid) 1px, transparent 1px);
+  }
+
+  .pl-hairline {
+    box-shadow: var(--shadow-hairline);
+  }
+
+  /* Promote layers that we animate with transforms during drag/zoom. */
+  .pl-gpu {
+    will-change: transform;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  .pl-no-select {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .pl-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}

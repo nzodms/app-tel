@@ -1,0 +1,54 @@
+{
+  "name": "phonelab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PhoneLab \u2014 the visual studio for Claude-built mobile apps.",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "npm run lint && npm run typecheck && npm run test",
+    "gen": "node scripts/generate-templates.mjs && node scripts/build-preview-runtime.mjs",
+    "predev": "npm run gen && node scripts/copy-monaco.mjs",
+    "prebuild": "npm run gen && node scripts/copy-monaco.mjs",
+    "pretest": "npm run gen",
+    "pretypecheck": "npm run gen",
+    "verify:e2e": "node scripts/verify-e2e.mjs"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "4.7.0",
+    "@supabase/supabase-js": "2.110.9",
+    "clsx": "2.1.1",
+    "esbuild": "0.28.1",
+    "jose": "6.2.4",
+    "lucide-react": "1.27.0",
+    "monaco-editor": "0.56.0",
+    "motion": "12.42.2",
+    "next": "16.2.12",
+    "preact": "10.29.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwind-merge": "3.6.0",
+    "zod": "4.4.3",
+    "zustand": "5.0.14"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "22.20.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.12",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}
