@@ -7,6 +7,7 @@ import { api } from '@/lib/api-client';
 import type { EventKind, EventLevel } from '@/server/db';
 import { Badge, EmptyState, IconButton, PanelHeader } from '@/components/ui/primitives';
 import { useStudio } from '../context';
+import { countDiagnostics } from '../store';
 
 /**
  * Build output, runtime logs, device events and errors in one stream.
@@ -35,6 +36,79 @@ const KIND_LABEL: Record<EventKind, string> = {
   journey: 'journey',
   comment: 'comment',
 };
+
+/**
+ * The problems the build actually reported, above the event stream.
+ *
+ * The build badge sends you here, and the event stream alone could not answer:
+ * a request that never reaches the compiler produces a diagnostic but no event,
+ * so clicking "1 error" landed on a panel with nothing in it. Diagnostics are
+ * the thing being counted, so they are the thing shown first.
+ */
+function ProblemsSection() {
+  const diagnostics = useStudio((state) => state.diagnostics);
+  const openFile = useStudio((state) => state.openFile);
+  const counts = countDiagnostics(diagnostics);
+
+  if (diagnostics.length === 0) return null;
+
+  const sourceLabel: Record<string, string> = {
+    esbuild: 'build',
+    runtime: 'runtime',
+    transport: 'request',
+  };
+
+  return (
+    <div className="shrink-0 border-b border-paper-200 bg-danger-50/35">
+      <div className="flex items-center gap-2 px-2.5 py-1.5">
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.055em] text-paper-500">
+          Problems
+        </span>
+        <Badge tone={counts.total > 0 ? 'danger' : 'caution'}>
+          {counts.total > 0
+            ? `${counts.total} error${counts.total === 1 ? '' : 's'}`
+            : `${counts.warnings} warning${counts.warnings === 1 ? '' : 's'}`}
+        </Badge>
+      </div>
+      <div className="max-h-[190px] overflow-y-auto pb-1.5">
+        {diagnostics.map((diagnostic, index) => (
+          <button
+            key={`${diagnostic.source}-${index}-${diagnostic.message.slice(0, 24)}`}
+            type="button"
+            onClick={() => {
+              // Only a compile diagnostic points at a file we can open.
+              if (diagnostic.source === 'esbuild' && diagnostic.file) void openFile(diagnostic.file);
+            }}
+            className="flex w-full gap-2 px-2.5 py-1 text-left hover:bg-paper-100/70"
+          >
+            <span
+              className={cn(
+                'mt-[5px] size-[5px] shrink-0 rounded-full',
+                diagnostic.severity === 'error' ? 'bg-danger-500' : 'bg-caution-500',
+              )}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-paper-400">
+                  {sourceLabel[diagnostic.source] ?? diagnostic.source}
+                </span>
+                {diagnostic.file ? (
+                  <span className="truncate font-mono text-[10.5px] text-paper-600">
+                    {diagnostic.file}
+                    {diagnostic.line ? `:${diagnostic.line}` : ''}
+                  </span>
+                ) : null}
+              </span>
+              <span className="mt-0.5 block whitespace-pre-wrap break-words font-mono text-[10.5px] leading-[1.5] text-paper-700">
+                {diagnostic.message}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function LogsPanel() {
   const events = useStudio((state) => state.events);
@@ -68,6 +142,8 @@ export function LogsPanel() {
           <Trash2 size={13} strokeWidth={1.7} />
         </IconButton>
       </PanelHeader>
+
+      <ProblemsSection />
 
       <div className="flex flex-wrap items-center gap-1 border-b border-paper-200 px-2 py-1.5">
         {(['all', 'error', 'warn', 'info', 'debug'] as const).map((option) => (

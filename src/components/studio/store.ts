@@ -995,11 +995,34 @@ export function createStudioStore(snapshot: StudioSnapshot) {
           break;
 
         case 'preview:error': {
+          /*
+           * A runtime exception is a real error and has to be counted as one.
+           * This used to write only `chrome.lastError`, so the error counter's
+           * runtime bucket was structurally always zero — it reported a
+           * distinction it could never actually make.
+           */
+          const runtimeDiagnostic: Diagnostic = {
+            severity: 'error',
+            message: message.message,
+            file: message.phase ? `${device.name} · ${message.phase}` : device.name,
+            line: null,
+            column: null,
+            source: 'runtime',
+          };
+
           set((current) => ({
             chrome: {
               ...current.chrome,
               [deviceId]: { ...(current.chrome[deviceId] ?? emptyChrome()), lastError: message.message },
             },
+            // Keyed by device so a second exception on the same phone replaces the
+            // first rather than piling up, while other phones keep theirs.
+            diagnostics: [
+              ...current.diagnostics.filter(
+                (entry) => !(entry.source === 'runtime' && entry.file?.startsWith(device.name)),
+              ),
+              runtimeDiagnostic,
+            ],
           }));
           void api(`/api/projects/${projectId}/preview/runtime-error`, {
             body: {
