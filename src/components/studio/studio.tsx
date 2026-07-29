@@ -20,6 +20,10 @@ import { previewRegistry } from './preview-registry';
 import { Toolbar } from './toolbar';
 import { Timeline } from './timeline';
 import { EdgeCasesPanel } from './edge-cases-panel';
+import { ClaudeActivityStrip } from './claude-activity-strip';
+import { CommandPalette, useCommandShortcuts } from './command-palette';
+import { PresentationChrome, useViewMode } from './presentation-chrome';
+import { chromeFor } from './view-modes';
 import { ShareDialog } from './share-dialog';
 import { FilesPanel } from './left/files-panel';
 import { CodePanel } from './left/code-panel';
@@ -94,6 +98,23 @@ function StudioShell() {
   const resizeRef = useRef<{ pointerId: number } | null>(null);
 
   useRealtime(projectId);
+
+  /**
+   * Focus and Presentation.
+   *
+   * `chromeFor` says what a mode hides; nothing here unmounts. The left column is
+   * hidden with the `hidden` attribute so it keeps its open editors, its scroll
+   * positions and its width — "restore the previous layout" is then true by
+   * construction rather than by a second reducer copying state back. The toolbar
+   * and the timeline render null *in their existing slot*, because re-ordering or
+   * re-wrapping an ancestor of a preview iframe reloads the app inside it.
+   */
+  const view = useViewMode();
+  const chrome = chromeFor(view.mode);
+
+  // Every command in one registry, bound in one place, so a shortcut cannot exist
+  // in the palette and not on the keyboard.
+  useCommandShortcuts(store, { openShare: () => setShareOpen(true) });
 
   /* One message listener for every preview frame. */
   useEffect(() => {
@@ -215,11 +236,12 @@ function StudioShell() {
       className="flex h-dvh flex-col overflow-hidden bg-paper-50"
       data-reduce-motion={reduceMotion ? 'true' : undefined}
     >
-      <Toolbar onOpenShare={() => setShareOpen(true)} />
+      {chrome.toolbar ? <Toolbar onOpenShare={() => setShareOpen(true)} /> : null}
 
       <div ref={containerRef} className="flex min-h-0 flex-1">
         {/* Left column: code and tools. */}
         <div
+          hidden={!chrome.leftPanel}
           className="flex min-w-[240px] flex-col border-r border-paper-200 bg-paper-0"
           style={{ width: `${leftWidth}%` }}
         >
@@ -297,7 +319,10 @@ function StudioShell() {
         <div className="relative flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
             <Canvas />
-            <EdgeCasesPanel />
+            {chrome.edgeCases ? <EdgeCasesPanel /> : null}
+            {/* Claude, working, as it happens. Absent entirely when nothing is
+                happening — an idle studio shows no strip, not an empty one. */}
+            <ClaudeActivityStrip />
             {inspector ? (
               <InspectorCard
                 sourceRef={inspector.sourceRef}
@@ -306,11 +331,13 @@ function StudioShell() {
               />
             ) : null}
           </div>
-          <Timeline />
+          {chrome.timeline ? <Timeline /> : null}
         </div>
       </div>
 
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
+      <CommandPalette onOpenShare={() => setShareOpen(true)} />
+      <PresentationChrome />
 
       {toast ? (
         <div
