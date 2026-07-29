@@ -54,6 +54,18 @@ export interface DeviceChassisProps {
   selected: boolean;
   dimmed?: boolean;
   children: ReactNode;
+  /**
+   * What the app inside is currently showing, for the families that have somewhere
+   * to put it: a browser window's address field and a window's title bar.
+   *
+   * `route` is the preview's own report of where it navigated — the frame sends it
+   * over postMessage — so the address bar follows the app rather than describing
+   * it. `title` is the project's name. Both are optional and both render empty
+   * when absent, because an address bar that invented a plausible URL would be the
+   * most convincing lie on the canvas.
+   */
+  route?: string | null;
+  title?: string | null;
   onDismissNotification: (id: string) => void;
   onResolveSheet: (sheetId: string, allowed: boolean) => void;
 }
@@ -71,6 +83,8 @@ export function DeviceChassis({
   selected,
   dimmed,
   children,
+  route,
+  title,
   onDismissNotification,
   onResolveSheet,
 }: DeviceChassisProps) {
@@ -89,6 +103,8 @@ export function DeviceChassis({
           orientation={orientation}
           theme={theme}
           selected={selected}
+          address={route ?? null}
+          title={title ?? null}
         />
       )}
 

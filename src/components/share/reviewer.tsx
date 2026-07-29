@@ -306,6 +306,8 @@ function ReviewerStage({
           roleLabel={roles.find((entry) => entry.slug === role)?.label ?? role}
           userLabel={roles.find((entry) => entry.slug === role)?.defaultUser ?? null}
           preset={preset}
+          projectName={payload.project?.name ?? null}
+          currentRoute={route}
           commentMode={commentMode}
           threads={threads}
           pin={pin}
@@ -326,6 +328,11 @@ function ReviewerStage({
             roleLabel={roles.find((entry) => entry.slug === role)?.label ?? role}
             userLabel={roles.find((entry) => entry.slug === role)?.defaultUser ?? null}
             preset={preset}
+            projectName={payload.project?.name ?? null}
+            // The comparison pane runs its own copy of an older version; it does
+            // not report its route back, so its address field stays empty rather
+            // than borrowing the live pane's.
+            currentRoute={null}
             commentMode={false}
             threads={[]}
             pin={null}
@@ -405,6 +412,8 @@ function ReviewPhone({
   roleLabel,
   userLabel,
   preset,
+  projectName,
+  currentRoute,
   commentMode,
   threads,
   pin,
@@ -419,6 +428,10 @@ function ReviewPhone({
   roleLabel: string;
   userLabel: string | null;
   preset: ReturnType<typeof getPreset>;
+  /** Shown in a window's title bar; a phone has nowhere to put it. */
+  projectName: string | null;
+  /** Where the app has navigated, for a browser window's address field. */
+  currentRoute: string | null;
   commentMode: boolean;
   threads: { id: string; anchorX: number; anchorY: number }[];
   pin: Pin | null;
@@ -569,6 +582,8 @@ function ReviewPhone({
           orientation="portrait"
           theme="light"
           selected={false}
+          route={currentRoute}
+          title={projectName}
           chrome={{
             status: { ...DEFAULT_STATUS },
             island,

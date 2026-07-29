@@ -50,29 +50,28 @@ import { chassisStyle } from './chassis';
  *  - Sub-pixel hairlines. A 0.5px line rasterises at 0.25 / 0.33 / 0.37 px below
  *    100% zoom; browsers collapse coverage that low to almost nothing, so the
  *    edge disappears precisely when you are zoomed out looking at the whole
- *    canvas. (`chassisStyle().railRing` still specifies 0.5px lines — that file
- *    is not mine to change, so the 1px contour below carries the silhouette on
- *    its own and the material ring is left as decoration on top of it.)
+ *    canvas. `chassisStyle().railRing` now builds its chamfer out of whole-pixel
+ *    bands for the same reason — see the EDGE PROFILE note in chassis.ts.
  */
-
-/** Silhouette. One flat pixel, so a pale chassis still cuts out of a pale canvas. */
-const CHASSIS_CONTOUR = '0 0 0 1px rgb(10 12 16 / 0.16)';
-
-/** Contact: tight and close. This is the layer that says "resting on something". */
-const CONTACT_SHADOW = '0 1px 1px rgb(10 12 16 / 0.20), 0 2px 4px -1px rgb(10 12 16 / 0.16)';
-
-/** Ambient: wide, soft, low. This is the layer that says "held above something". */
-const AMBIENT_SHADOW =
-  '0 12px 22px -10px rgb(10 12 16 / 0.18), 0 30px 56px -20px rgb(10 12 16 / 0.24)';
-
-const RESTING_SHADOW = `${CHASSIS_CONTOUR}, ${CONTACT_SHADOW}, ${AMBIENT_SHADOW}`;
 
 /**
- * Selection = the phone lifts. Added on its own layer and cross-faded, so picking
- * a phone costs one composited opacity change, not a repaint of a 56px blur.
+ * Depth, from the shared tokens rather than from copies of them.
+ *
+ * These were four literals here that near-duplicated `--pl-shadow-device*` in
+ * globals.css — the token file even says a component that needs an inline
+ * box-shadow must read the var. The copies had drifted: a phone and a laptop side
+ * by side differed by up to 0.02 alpha and 2px of blur, which nobody could see and
+ * everybody would eventually have made worse. One source now, and a phone and a
+ * MacBook are lit by the same lamp because they are reading the same numbers.
  */
-const LIFT_SHADOW =
-  '0 20px 34px -14px rgb(10 12 16 / 0.16), 0 44px 80px -26px rgb(10 12 16 / 0.20)';
+const RESTING_SHADOW = 'var(--pl-shadow-device)';
+
+/**
+ * Selection = the phone lifts. An additive layer cross-faded over the resting
+ * stack, so picking a phone costs one composited opacity change rather than a
+ * repaint of a 56px blur.
+ */
+const LIFT_SHADOW = 'var(--pl-shadow-device-lift)';
 
 /** Gap between chassis and selection ring. Even, so it stays on integers. */
 const SELECTION_GAP = 4;

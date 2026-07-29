@@ -172,6 +172,8 @@ export const DeviceNode = memo(function DeviceNode({
         theme={device.theme}
         selected={selected}
         dimmed={dimmed}
+        route={chrome?.route ?? null}
+        title={projectName}
         chrome={{
           status: chrome?.status ?? { battery: 82, charging: false, signal: 4, wifi: true, network: device.network },
           island: chrome?.island ?? { state: 'compact', label: null, detail: null, progress: null, tone: 'default' },
