@@ -504,6 +504,22 @@ export function createStudioStore(snapshot: StudioSnapshot) {
             .ensureBundle(patch.versionId ?? 'working')
             .then(() => get().reloadDevice(deviceId));
         }
+        // A format change resizes the object under the user — swapping a phone
+        // for a MacBook makes it three and a half times wider — so a device can
+        // grow straight off the edge of the screen with no sign of where it
+        // went.
+        //
+        // No "only if selected" guard: changing a device's format is always a
+        // deliberate act on that one device (its own action bar, or the Edge
+        // Case Studio's target), and `revealDevice` already does nothing when
+        // the device is still fully visible. Realtime updates from another tab
+        // do not come through here, so this can never yank the canvas because
+        // of something someone else did.
+        if (patch.presetId !== undefined || patch.orientation !== undefined) {
+          // Next frame: the canvas measures its own viewport, and the layout
+          // must have settled before it does.
+          requestAnimationFrame(() => canvasApi.get()?.revealDevice(deviceId));
+        }
       }
 
       try {

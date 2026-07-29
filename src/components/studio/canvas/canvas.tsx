@@ -92,6 +92,9 @@ export function Canvas() {
     };
   }, []);
 
+  /** Handle of a running view ease, so a new one can cancel it mid-flight. */
+  const viewEaseRef = useRef<number | null>(null);
+
   const applyView = useCallback(() => {
     const world = worldRef.current;
     const viewport = viewportRef.current;
@@ -104,6 +107,64 @@ export function Canvas() {
     viewport.style.backgroundPosition = `${x}px ${y}px, ${x}px ${y}px`;
     canvasApi.publishZoom(scale);
   }, []);
+
+  /**
+   * Glides the viewport to a new pan/zoom.
+   *
+   * Driven by rAF rather than by a CSS transition, because the grid is painted as
+   * the viewport's background and has to stay locked to world space: a CSS
+   * transition would move the phones and leave the surface behind them standing
+   * still. `applyView` already writes the transform and both background
+   * properties together, and a pointer pan calls it on every move at 60fps — so
+   * this is the same write path a drag already proves is cheap, just driven by a
+   * clock instead of by a thumb.
+   *
+   * Cancelled by the next gesture: a running ease is dropped the moment anyone
+   * else writes the view, so the canvas never fights the pointer.
+   */
+  const easeViewTo = useCallback(
+    (target: ViewTransform, durationMs = 260) => {
+      const start = { ...viewRef.current };
+      const reduced =
+        typeof window !== 'undefined' &&
+        (window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+          document.documentElement.dataset.reduceMotion === 'true');
+
+      if (viewEaseRef.current !== null) cancelAnimationFrame(viewEaseRef.current);
+      if (reduced || durationMs <= 0) {
+        viewEaseRef.current = null;
+        viewRef.current = target;
+        applyView();
+        return;
+      }
+
+      const began = performance.now();
+      const step = (now: number) => {
+        const t = Math.min((now - began) / durationMs, 1);
+        // Quintic out — the same curve as --ease-out-quint, so an eased view and
+        // an eased device move look like one motion.
+        const eased = 1 - (1 - t) ** 5;
+        viewRef.current = {
+          x: start.x + (target.x - start.x) * eased,
+          y: start.y + (target.y - start.y) * eased,
+          scale: start.scale + (target.scale - start.scale) * eased,
+        };
+        applyView();
+        viewEaseRef.current = t < 1 ? requestAnimationFrame(step) : null;
+      };
+      viewEaseRef.current = requestAnimationFrame(step);
+    },
+    [applyView],
+  );
+
+  /** Drops a running ease so a gesture always wins over an animation. */
+  const cancelViewEase = useCallback(() => {
+    if (viewEaseRef.current === null) return;
+    cancelAnimationFrame(viewEaseRef.current);
+    viewEaseRef.current = null;
+  }, []);
+
+  useEffect(() => () => cancelViewEase(), [cancelViewEase]);
 
   /* -------------------------------------------------------- imperative API */
 
@@ -168,12 +229,50 @@ export function Canvas() {
         const viewport = viewportRef.current;
         const device = store.getState().devices.find((entry) => entry.id === deviceId);
         if (!viewport || !device) return;
-        viewRef.current = fitRects(
-          [rectFor(device)],
-          { width: viewport.clientWidth, height: viewport.clientHeight },
-          140,
+        easeViewTo(
+          fitRects(
+            [rectFor(device)],
+            { width: viewport.clientWidth, height: viewport.clientHeight },
+            140,
+          ),
         );
-        applyView();
+      },
+      revealDevice(deviceId) {
+        const viewport = viewportRef.current;
+        const device = store.getState().devices.find((entry) => entry.id === deviceId);
+        if (!viewport || !device) return;
+
+        const view = viewRef.current;
+        const rect = rectFor(device);
+        const box = {
+          left: rect.x * view.scale + view.x,
+          top: rect.y * view.scale + view.y,
+          right: (rect.x + rect.width) * view.scale + view.x,
+          bottom: (rect.y + rect.height) * view.scale + view.y,
+        };
+        // The label strip and the action bar live just outside the chassis rect,
+        // so "visible" has to mean visible with room around it.
+        const margin = 28;
+        const width = viewport.clientWidth;
+        const height = viewport.clientHeight;
+
+        const fits =
+          box.right - box.left <= width - margin * 2 && box.bottom - box.top <= height - margin * 2;
+        if (!fits) {
+          easeViewTo(fitRects([rect], { width, height }, 96));
+          return;
+        }
+
+        // It fits: pan the least distance that brings every edge inside.
+        let dx = 0;
+        let dy = 0;
+        if (box.left < margin) dx = margin - box.left;
+        else if (box.right > width - margin) dx = width - margin - box.right;
+        if (box.top < margin) dy = margin - box.top;
+        else if (box.bottom > height - margin) dy = height - margin - box.bottom;
+        if (dx === 0 && dy === 0) return;
+
+        easeViewTo({ ...view, x: view.x + dx, y: view.y + dy });
       },
       getZoom() {
         return viewRef.current.scale;
@@ -186,7 +285,7 @@ export function Canvas() {
     });
 
     return () => canvasApi.set(null);
-  }, [applyView, rectFor, store]);
+  }, [applyView, easeViewTo, rectFor, store]);
 
   /**
    * Arrange once on open if the layout is degenerate, then fit.
@@ -235,6 +334,8 @@ export function Canvas() {
 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
+      // A gesture always wins over an animation.
+      cancelViewEase();
       const rect = viewport.getBoundingClientRect();
       const anchor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 
@@ -255,7 +356,7 @@ export function Canvas() {
     // Non-passive: we need preventDefault to stop the page from scrolling/zooming.
     viewport.addEventListener('wheel', onWheel, { passive: false });
     return () => viewport.removeEventListener('wheel', onWheel);
-  }, [applyView]);
+  }, [applyView, cancelViewEase]);
 
   /* --------------------------------------------------------- space to pan  */
 
@@ -286,6 +387,7 @@ export function Canvas() {
 
   const beginPan = useCallback(
     (event: React.PointerEvent) => {
+      cancelViewEase();
       panRef.current = {
         pointerId: event.pointerId,
         startClient: { x: event.clientX, y: event.clientY },
@@ -294,7 +396,7 @@ export function Canvas() {
       (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
       if (viewportRef.current) viewportRef.current.style.cursor = 'grabbing';
     },
-    [],
+    [cancelViewEase],
   );
 
   const onViewportPointerDown = useCallback(
@@ -328,6 +430,7 @@ export function Canvas() {
         if (device) origins.set(id, { x: device.x, y: device.y });
       }
 
+      cancelViewEase();
       dragRef.current = {
         pointerId: event.pointerId,
         startClient: { x: event.clientX, y: event.clientY },
@@ -339,7 +442,7 @@ export function Canvas() {
       };
       (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     },
-    [store],
+    [cancelViewEase, store],
   );
 
   const paintDrag = useCallback(() => {
