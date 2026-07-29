@@ -10,12 +10,12 @@ import {
   RectangleHorizontal,
   RectangleVertical,
   SlidersHorizontal,
-  Smartphone,
   Trash2,
   Unlock,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { DEVICE_PRESETS, getPreset } from '@/lib/devices/presets';
+import { DEVICE_PRESETS, getPreset, isRotatable } from '@/lib/devices/presets';
+import { FAMILY_LABELS, FAMILY_ORDER, FamilyIcon } from '../device-family';
 import { getRole, roleColor } from '@/lib/devices/roles';
 import { Button, IconButton } from '@/components/ui/primitives';
 import { MenuItem, MenuLabel, Popover } from '@/components/ui/popover';
@@ -313,7 +313,7 @@ export function DeviceActionBar({
                         title={`Format · ${preset.formatNote}`}
                         className={cn(open && 'bg-paper-100')}
                       >
-                        <Smartphone size={12} strokeWidth={1.8} />
+                        <FamilyIcon family={preset.family} />
                         {preset.name}
                         <ChevronDown size={11} strokeWidth={2} className="text-paper-400" />
                       </Button>
@@ -322,22 +322,28 @@ export function DeviceActionBar({
                   )}
                 >
                   {({ close }) => (
-                    <div className="max-h-[280px] overflow-y-auto">
-                      <MenuLabel>Format</MenuLabel>
-                      {DEVICE_PRESETS.map((entry) => (
-                        <MenuItem
-                          key={entry.id}
-                          active={entry.id === device.presetId}
-                          hint={`${entry.viewport.width}×${entry.viewport.height}`}
-                          onClick={() => {
-                            if (entry.id !== device.presetId) {
-                              void patchDevice(device.id, { presetId: entry.id });
-                            }
-                            close();
-                          }}
-                        >
-                          {entry.name}
-                        </MenuItem>
+                    <div className="max-h-[320px] overflow-y-auto">
+                      {FAMILY_ORDER.filter((family) =>
+                        DEVICE_PRESETS.some((entry) => entry.family === family),
+                      ).map((family) => (
+                        <div key={family}>
+                          <MenuLabel>{FAMILY_LABELS[family]}</MenuLabel>
+                          {DEVICE_PRESETS.filter((entry) => entry.family === family).map((entry) => (
+                            <MenuItem
+                              key={entry.id}
+                              active={entry.id === device.presetId}
+                              hint={`${entry.viewport.width}×${entry.viewport.height}`}
+                              onClick={() => {
+                                if (entry.id !== device.presetId) {
+                                  void patchDevice(device.id, { presetId: entry.id });
+                                }
+                                close();
+                              }}
+                            >
+                              {entry.name}
+                            </MenuItem>
+                          ))}
+                        </div>
                       ))}
                       <MenuNote>
                         Preset names describe the viewport format. PhoneLab is not affiliated with any
@@ -347,27 +353,32 @@ export function DeviceActionBar({
                   )}
                 </Popover>
 
-                {/* Orientation */}
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  disabled={locked}
-                  title={
-                    device.orientation === 'portrait' ? 'Rotate to landscape' : 'Rotate to portrait'
-                  }
-                  onClick={() =>
-                    void patchDevice(device.id, {
-                      orientation: device.orientation === 'portrait' ? 'landscape' : 'portrait',
-                    })
-                  }
-                >
-                  {device.orientation === 'portrait' ? (
-                    <RectangleVertical size={12} strokeWidth={1.8} />
-                  ) : (
-                    <RectangleHorizontal size={12} strokeWidth={1.8} />
-                  )}
-                  {device.orientation === 'portrait' ? 'Portrait' : 'Landscape'}
-                </Button>
+                {/* Orientation. Only offered where it means something: a monitor
+                    and a laptop do not turn, and `deviceGeometry` ignores the
+                    field for them — a button that persisted a value nothing read
+                    would be a control that does nothing. */}
+                {isRotatable(preset) ? (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    disabled={locked}
+                    title={
+                      device.orientation === 'portrait' ? 'Rotate to landscape' : 'Rotate to portrait'
+                    }
+                    onClick={() =>
+                      void patchDevice(device.id, {
+                        orientation: device.orientation === 'portrait' ? 'landscape' : 'portrait',
+                      })
+                    }
+                  >
+                    {device.orientation === 'portrait' ? (
+                      <RectangleVertical size={12} strokeWidth={1.8} />
+                    ) : (
+                      <RectangleHorizontal size={12} strokeWidth={1.8} />
+                    )}
+                    {device.orientation === 'portrait' ? 'Portrait' : 'Landscape'}
+                  </Button>
+                ) : null}
 
                 {/* Pinned version */}
                 <Popover

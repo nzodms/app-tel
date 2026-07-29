@@ -8,7 +8,7 @@ import { deviceGeometry, getPreset } from '@/lib/devices/presets';
 import { isPreviewMessage, type PreviewMessage } from '@/lib/preview/protocol';
 import { Badge, Button, Card, Field, Input, Textarea } from '@/components/ui/primitives';
 import { Wordmark } from '@/components/brand/logo';
-import { Phone } from '@/components/studio/canvas/phone';
+import { DeviceChassis } from '@/components/studio/canvas/device-chassis';
 import { IDLE_ISLAND, type IslandContent } from '@/components/studio/canvas/dynamic-island';
 import { DEFAULT_STATUS } from '@/components/studio/canvas/status-bar';
 import type { PreviewNotification } from '@/lib/preview/protocol';
@@ -558,7 +558,9 @@ function ReviewPhone({
       </div>
 
       <div className="relative">
-        <Phone
+        {/* Always upright: `orientation` is not part of a share payload, and
+            `deviceGeometry` ignores it on the families that do not turn. */}
+        <DeviceChassis
           preset={preset}
           orientation="portrait"
           theme="light"
@@ -617,7 +619,7 @@ function ReviewPhone({
               style={{ left: `${pin.x * 100}%`, top: `${pin.y * 100}%` }}
             />
           ) : null}
-        </Phone>
+        </DeviceChassis>
       </div>
     </div>
   );

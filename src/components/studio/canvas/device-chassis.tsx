@@ -1,0 +1,251 @@
+'use client';
+
+import type { ReactNode } from 'react';
+import { deviceGeometry, type DevicePreset } from '@/lib/devices/presets';
+import type { PreviewNotification } from '@/lib/preview/protocol';
+import { GLASS_SHEEN } from './chassis';
+import { DeviceCutout, type IslandContent } from './dynamic-island';
+import { KeyboardLayer, NotificationLayer, SystemSheetLayer, type SystemSheet } from './overlays';
+import { HomeIndicator, StatusBar, type StatusBarState } from './status-bar';
+import { PhoneChassis } from './phone';
+import { SurfaceChassis } from './surface-chassis';
+
+/**
+ * A device on the canvas: the object, and the display in it.
+ *
+ * **Why this file exists.** The chassis families are drawn by different
+ * components — a phone is not a laptop — but the *display* must be the same
+ * element for all of them, because a sandboxed `<iframe>` reloads the moment the
+ * browser re-parents it. Rendering the preview inside each family's own component
+ * meant that switching from a phone to a MacBook unmounted one subtree and
+ * mounted another, and the running app was thrown away and booted again. That was
+ * measurable: a marker set on the frame's `window` survived every phone-to-phone
+ * and phone-to-tablet switch and vanished on the first cross-family one.
+ *
+ * So the skeleton here is fixed:
+ *
+ *     <div>                     ← chassis-sized box
+ *       {chassis art}           ← slot 0, swaps freely; contains no iframe
+ *       <DeviceScreen>          ← slot 1, ALWAYS this component
+ *         {children}            ← the preview, never re-parented
+ *
+ * React reconciles children by position, so only slot 0 is torn down when the
+ * family changes. Slot 1 keeps its instance, its DOM node, and the live app.
+ *
+ * The rule that follows: **nothing in a chassis component may render `children`,
+ * and no chassis may draw above the display.** Both hold today — every family's
+ * art is casters, rail, bezel, buttons or window chrome, all of it behind the
+ * screen box, plus a selection ring that sits outside the chassis rect entirely.
+ */
+
+export interface DeviceChromeState {
+  status: StatusBarState;
+  island: IslandContent;
+  notifications: PreviewNotification[];
+  sheet: SystemSheet | null;
+  keyboardOpen: boolean;
+}
+
+export interface DeviceChassisProps {
+  preset: DevicePreset;
+  orientation: 'portrait' | 'landscape';
+  theme: 'light' | 'dark';
+  chrome: DeviceChromeState;
+  selected: boolean;
+  dimmed?: boolean;
+  children: ReactNode;
+  onDismissNotification: (id: string) => void;
+  onResolveSheet: (sheetId: string, allowed: boolean) => void;
+}
+
+/** A phone and a tablet are one object at two sizes; the rest are not. */
+export function isHandheld(preset: DevicePreset): boolean {
+  return preset.family === 'phone' || preset.family === 'tablet';
+}
+
+export function DeviceChassis({
+  preset,
+  orientation,
+  theme,
+  chrome,
+  selected,
+  dimmed,
+  children,
+  onDismissNotification,
+  onResolveSheet,
+}: DeviceChassisProps) {
+  const geometry = deviceGeometry(preset, orientation);
+
+  return (
+    <div
+      className="relative"
+      style={{ width: geometry.chassis.width, height: geometry.chassis.height }}
+    >
+      {isHandheld(preset) ? (
+        <PhoneChassis preset={preset} orientation={orientation} selected={selected} />
+      ) : (
+        <SurfaceChassis
+          preset={preset}
+          orientation={orientation}
+          theme={theme}
+          selected={selected}
+        />
+      )}
+
+      <DeviceScreen
+        preset={preset}
+        orientation={orientation}
+        theme={theme}
+        chrome={chrome}
+        dimmed={Boolean(dimmed)}
+        onDismissNotification={onDismissNotification}
+        onResolveSheet={onResolveSheet}
+      >
+        {children}
+      </DeviceScreen>
+    </div>
+  );
+}
+
+/**
+ * The display, and everything the system draws on top of the app.
+ *
+ * Positioned from `geometry.screenOrigin` and sized from `geometry.screen`, which
+ * is the contract every family's art is built against — so this one element lands
+ * in the lid of a laptop, under the address bar of a browser window and inside
+ * the bezel of a phone without knowing which it is in.
+ *
+ * No inset ring on the box itself: an inset shadow paints *under* an element's
+ * children, so the iframe would hide it the instant the preview mounted. The
+ * display edge is drawn as its own layer above the app, at the bottom.
+ */
+function DeviceScreen({
+  preset,
+  orientation,
+  theme,
+  chrome,
+  dimmed,
+  children,
+  onDismissNotification,
+  onResolveSheet,
+}: {
+  preset: DevicePreset;
+  orientation: 'portrait' | 'landscape';
+  theme: 'light' | 'dark';
+  chrome: DeviceChromeState;
+  dimmed: boolean;
+  children: ReactNode;
+  onDismissNotification: (id: string) => void;
+  onResolveSheet: (sheetId: string, allowed: boolean) => void;
+}) {
+  const geometry = deviceGeometry(preset, orientation);
+  const landscape = geometry.landscape;
+  const handheld = isHandheld(preset);
+  // A window's display meets a title bar along a straight line at the top and the
+  // shell's own corners at the bottom, so only the bottom two are rounded. Every
+  // other family's display is rounded all the way round, like the object holding
+  // it.
+  const windowed = preset.family === 'desktop' || preset.family === 'browser';
+  const radius = windowed
+    ? `0 0 ${geometry.screenRadius}px ${geometry.screenRadius}px`
+    : geometry.screenRadius;
+
+  /**
+   * Whether a status bar is drawn at all.
+   *
+   * This used to be "has a cutout, or is Android", which quietly excluded both
+   * tablets: they declare `statusBar: 'ios'` and a 24pt top safe area, have no
+   * cutout, and so got no clock, no wifi and no battery while the app was pushed
+   * down by an inset nothing occupied.
+   *
+   * The landscape clause is the rule `deviceGeometry` already applies to the safe
+   * area — iOS hides the bar on a *phone* turned sideways, iPadOS does not.
+   * Drawing it anyway put a clock over a strip the app had been told it owns.
+   */
+  const iosPhoneLandscape = preset.statusBar === 'ios' && preset.family === 'phone' && landscape;
+  const showStatusBar = preset.statusBar !== 'none' && !iosPhoneLandscape;
+
+  return (
+    <div
+      // The display rect. Marked so a browser probe can measure what is drawn on
+      // it: the status bar's alignment is a geometry claim, and geometry claims
+      // should be checked against the DOM rather than against a screenshot.
+      data-pl="screen"
+      className="absolute overflow-hidden"
+      style={{
+        left: geometry.screenOrigin.x,
+        top: geometry.screenOrigin.y,
+        width: geometry.screen.width,
+        height: geometry.screen.height,
+        borderRadius: radius,
+        background: theme === 'dark' ? '#0e1116' : '#f5f6f8',
+      }}
+    >
+      <div className="absolute inset-0">{children}</div>
+
+      {showStatusBar ? (
+        <StatusBar preset={preset} state={chrome.status} theme={theme} landscape={landscape} />
+      ) : null}
+
+      <DeviceCutout preset={preset} content={chrome.island} landscape={landscape} />
+
+      {/* A banner and a software keyboard are handheld chrome. On a laptop, a
+          monitor or a browser window they are simply absent — the Edge Case
+          Studio greys the matching switches and says why, rather than accepting
+          a flag that would change nothing on screen. */}
+      {handheld ? (
+        <NotificationLayer
+          notifications={chrome.notifications}
+          preset={preset}
+          theme={theme}
+          island={chrome.island}
+          onDismiss={onDismissNotification}
+        />
+      ) : null}
+
+      {handheld && chrome.keyboardOpen ? (
+        <KeyboardLayer
+          height={Math.round(geometry.screen.height * 0.42)}
+          theme={theme}
+          landscape={landscape}
+        />
+      ) : null}
+
+      {/* A permission prompt is real everywhere, including in a browser. */}
+      <SystemSheetLayer sheet={chrome.sheet} theme={theme} onResolve={onResolveSheet} />
+
+      {preset.homeIndicator ? (
+        <HomeIndicator theme={theme} width={geometry.screen.width} landscape={landscape} />
+      ) : null}
+
+      {/* Glass, on the families that are a piece of glass. A window is not one.
+          Held at 0.75: the sweep peaks at 16% white, and on a large preset at
+          100–125% that is a visible haze over the top-left of the app rather than
+          a highlight on glass. Dialled back it still reads as glass at 50%. */}
+      {handheld ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-[60]"
+          style={{ background: GLASS_SHEEN, borderRadius: radius, opacity: 0.75 }}
+        />
+      ) : null}
+
+      {dimmed ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-[61]"
+          style={{ background: 'rgba(10,12,16,0.35)' }}
+        />
+      ) : null}
+
+      {/* Display edge: the panel catching light where it meets what holds it.
+          Above everything, because it is the edge of the screen and not part of
+          the picture on it. 1px, so it survives 50% zoom. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[62]"
+        style={{ borderRadius: radius, boxShadow: 'inset 0 0 0 1px rgb(255 255 255 / 0.07)' }}
+      />
+    </div>
+  );
+}

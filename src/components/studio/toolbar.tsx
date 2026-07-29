@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { DEVICE_PRESETS } from '@/lib/devices/presets';
+import { FAMILY_LABELS, FAMILY_ORDER } from './device-family';
 import { ROLE_CATALOG } from '@/lib/devices/roles';
 import { Badge, Button, IconButton, StatusDot } from '@/components/ui/primitives';
 import { MenuItem, MenuLabel, Popover } from '@/components/ui/popover';
@@ -197,18 +198,24 @@ export function Toolbar({ onOpenShare }: { onOpenShare: () => void }) {
                 </MenuItem>
               ),
             )}
-            <MenuLabel>Format</MenuLabel>
-            {DEVICE_PRESETS.map((preset) => (
-              <MenuItem
-                key={preset.id}
-                hint={`${preset.viewport.width}×${preset.viewport.height}`}
-                onClick={() => {
-                  void addDevice({ presetId: preset.id, role: roles[0]?.slug ?? 'customer' });
-                  close();
-                }}
-              >
-                {preset.name}
-              </MenuItem>
+            {FAMILY_ORDER.filter((family) =>
+              DEVICE_PRESETS.some((preset) => preset.family === family),
+            ).map((family) => (
+              <div key={family}>
+                <MenuLabel>{FAMILY_LABELS[family]}</MenuLabel>
+                {DEVICE_PRESETS.filter((preset) => preset.family === family).map((preset) => (
+                  <MenuItem
+                    key={preset.id}
+                    hint={`${preset.viewport.width}×${preset.viewport.height}`}
+                    onClick={() => {
+                      void addDevice({ presetId: preset.id, role: roles[0]?.slug ?? 'customer' });
+                      close();
+                    }}
+                  >
+                    {preset.name}
+                  </MenuItem>
+                ))}
+              </div>
             ))}
             <p className="border-t border-paper-150 px-2.5 py-1.5 text-[10.5px] leading-snug text-paper-400">
               Preset names describe the viewport format. PhoneLab is not affiliated with any device

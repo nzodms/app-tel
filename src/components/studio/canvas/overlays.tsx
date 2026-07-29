@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import type { PreviewNotification } from '@/lib/preview/protocol';
 import type { DevicePreset } from '@/lib/devices/presets';
+import { bannerTop, type IslandContent } from './dynamic-island';
 
 /**
  * Device-chrome overlays: notification banners, system sheets, and the simulated
@@ -26,22 +27,22 @@ export function NotificationLayer({
   notifications,
   preset,
   theme,
+  island,
   onDismiss,
 }: {
   notifications: PreviewNotification[];
   preset: DevicePreset;
   theme: 'light' | 'dark';
+  /** What the cutout is showing, so a banner never lands on an expanded island. */
+  island: IslandContent;
   onDismiss: (id: string) => void;
 }) {
-  const top =
-    preset.cutout.kind === 'dynamic-island'
-      ? preset.cutout.top + preset.cutout.height + 10
-      : preset.safeArea.top + 6;
+  const top = bannerTop(preset, island);
 
   return (
     <div
       className="absolute inset-x-0 z-40 flex flex-col items-center gap-2 px-3"
-      style={{ top }}
+      style={{ top, transition: 'top 200ms var(--ease-out-quint)' }}
     >
       <AnimatePresence initial={false}>
         {notifications.map((notification) => (

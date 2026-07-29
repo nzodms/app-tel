@@ -5,7 +5,7 @@ import { deviceGeometry, getPreset } from '@/lib/devices/presets';
 import { getRole, roleColor } from '@/lib/devices/roles';
 import type { DeviceRow } from '@/server/db';
 import { useStudio } from '../context';
-import { Phone } from './phone';
+import { DeviceChassis } from './device-chassis';
 import { PreviewFrame } from './preview-frame';
 import { BuildErrorCard } from './build-error-card';
 import { DeviceActionBar } from './device-action-bar';
@@ -61,6 +61,27 @@ export const DeviceNode = memo(function DeviceNode({
   // Session-only, deliberately. `DeviceRow` has no `locked` column and nothing
   // persists one — see the note on `DeviceActionBarProps.locked`.
   const [locked, setLocked] = useState(false);
+
+  const dimmed = replayActive && replayStep === null;
+  const screenContents = (
+    <>
+      <PreviewFrame
+        deviceId={device.id}
+        width={geometry.screen.width}
+        height={geometry.screen.height}
+        title={`${device.name} preview`}
+      />
+
+      {/* Build failure is shown *inside* the device: that is where you are looking. */}
+      {bundle?.status === 'error' ? <BuildErrorCard deviceId={device.id} bundle={bundle} /> : null}
+
+      {bundle?.status === 'building' ? (
+        <div className="absolute inset-x-0 top-0 z-[56] h-[2px] overflow-hidden">
+          <div className="h-full w-1/3 animate-[pl-slide_1.1s_ease-in-out_infinite] bg-azure-500" />
+        </div>
+      ) : null}
+    </>
+  );
 
   return (
     <div
@@ -130,12 +151,12 @@ export const DeviceNode = memo(function DeviceNode({
         </span>
       </div>
 
-      <Phone
+      <DeviceChassis
         preset={preset}
         orientation={device.orientation}
         theme={device.theme}
         selected={selected}
-        dimmed={replayActive && replayStep === null}
+        dimmed={dimmed}
         chrome={{
           status: chrome?.status ?? { battery: 82, charging: false, signal: 4, wifi: true, network: device.network },
           island: chrome?.island ?? { state: 'compact', label: null, detail: null, progress: null, tone: 'default' },
@@ -146,24 +167,8 @@ export const DeviceNode = memo(function DeviceNode({
         onDismissNotification={(id) => dismissNotification(device.id, id)}
         onResolveSheet={(sheetId, allowed) => resolveSheet(device.id, sheetId, allowed)}
       >
-        <PreviewFrame
-          deviceId={device.id}
-          width={geometry.screen.width}
-          height={geometry.screen.height}
-          title={`${device.name} preview`}
-        />
-
-        {/* Build failure is shown *inside* the phone: that is where you are looking. */}
-        {bundle?.status === 'error' ? (
-          <BuildErrorCard deviceId={device.id} bundle={bundle} />
-        ) : null}
-
-        {bundle?.status === 'building' ? (
-          <div className="absolute inset-x-0 top-0 z-[56] h-[2px] overflow-hidden">
-            <div className="h-full w-1/3 animate-[pl-slide_1.1s_ease-in-out_infinite] bg-azure-500" />
-          </div>
-        ) : null}
-      </Phone>
+        {screenContents}
+      </DeviceChassis>
     </div>
   );
 });

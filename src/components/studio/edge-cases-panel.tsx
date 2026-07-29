@@ -3,9 +3,22 @@
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { edgeCaseGroups, toggleFlag } from '@/lib/devices/edge-cases';
-import { DEVICE_PRESETS } from '@/lib/devices/presets';
+import { DEVICE_PRESETS, getPreset, isRotatable } from '@/lib/devices/presets';
 import { Badge, Button, IconButton } from '@/components/ui/primitives';
+import { FAMILY_LABELS, FAMILY_ORDER } from './device-family';
 import { useStudio } from './context';
+
+/**
+ * Chrome the phone draws and a laptop, a monitor or a browser window does not.
+ *
+ * These stay visible on those families but cannot be switched on, and say why.
+ * Silently accepting the flag would be the worse option: it persists, the chip
+ * reads "active", and nothing happens on screen.
+ */
+const HANDHELD_ONLY_FLAGS: Record<string, string> = {
+  'keyboard-open': 'A software keyboard is a handheld thing — this format has a real one.',
+  'notifications-disabled': 'Banner notifications are drawn on handhelds only.',
+};
 
 /**
  * Edge Case Studio.
@@ -28,9 +41,13 @@ export function EdgeCasesPanel() {
   if (!open) return null;
 
   const target = devices.find((device) => device.id === selectedIds[0]) ?? devices[0] ?? null;
+  const targetFamily = target ? getPreset(target.presetId).family : null;
+  const handheld = targetFamily === 'phone' || targetFamily === 'tablet';
+  const unavailable = (flagId: string) =>
+    target && !handheld ? HANDHELD_ONLY_FLAGS[flagId] : undefined;
 
   const applyToTarget = (flagId: string) => {
-    if (!target) return;
+    if (!target || unavailable(flagId)) return;
     void patchDevice(target.id, { stateFlags: toggleFlag(target.stateFlags, flagId) });
   };
 
@@ -83,22 +100,30 @@ export function EdgeCasesPanel() {
               className="h-6.5 rounded-md border border-paper-300 bg-paper-0 px-1 text-[11px] text-paper-700"
               aria-label="Device format"
             >
-              {DEVICE_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name}
-                </option>
+              {FAMILY_ORDER.filter((family) =>
+                DEVICE_PRESETS.some((preset) => preset.family === family),
+              ).map((family) => (
+                <optgroup key={family} label={FAMILY_LABELS[family]}>
+                  {DEVICE_PRESETS.filter((preset) => preset.family === family).map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
-            <button
-              onClick={() =>
-                void patchDevice(target.id, {
-                  orientation: target.orientation === 'portrait' ? 'landscape' : 'portrait',
-                })
-              }
-              className="h-6.5 rounded-md border border-paper-300 bg-paper-0 px-1.5 text-[11px] text-paper-700 hover:bg-paper-100"
-            >
-              {target.orientation}
-            </button>
+            {isRotatable(getPreset(target.presetId)) ? (
+              <button
+                onClick={() =>
+                  void patchDevice(target.id, {
+                    orientation: target.orientation === 'portrait' ? 'landscape' : 'portrait',
+                  })
+                }
+                className="h-6.5 rounded-md border border-paper-300 bg-paper-0 px-1.5 text-[11px] text-paper-700 hover:bg-paper-100"
+              >
+                {target.orientation}
+              </button>
+            ) : null}
             <button
               onClick={() =>
                 void patchDevice(target.id, { theme: target.theme === 'light' ? 'dark' : 'light' })
@@ -135,25 +160,28 @@ export function EdgeCasesPanel() {
             </div>
             {group.entries.map((entry) => {
               const active = target?.stateFlags.includes(entry.id) ?? false;
+              const blocked = unavailable(entry.id);
               return (
                 <div
                   key={entry.id}
                   className={cn(
                     'flex items-start gap-2 border-b border-paper-100 px-2.5 py-2 transition-colors',
-                    active && 'bg-azure-50/60',
+                    active && !blocked && 'bg-azure-50/60',
+                    blocked && 'opacity-60',
                   )}
                 >
                   <button
                     onClick={() => applyToTarget(entry.id)}
-                    disabled={!target}
+                    disabled={!target || Boolean(blocked)}
+                    title={blocked}
                     className={cn(
                       'mt-[2px] grid h-4 w-7 shrink-0 place-items-center rounded-full border transition-colors',
-                      active
+                      active && !blocked
                         ? 'border-azure-500 bg-azure-500'
                         : 'border-paper-300 bg-paper-100 hover:border-paper-400',
-                      !target && 'cursor-not-allowed opacity-45',
+                      (!target || blocked) && 'cursor-not-allowed opacity-45',
                     )}
-                    aria-pressed={active}
+                    aria-pressed={active && !blocked}
                     aria-label={`${active ? 'Disable' : 'Enable'} ${entry.label}`}
                   >
                     <span
@@ -182,7 +210,7 @@ export function EdgeCasesPanel() {
                       </span>
                     </div>
                     <p className="mt-0.5 text-[11.5px] leading-snug text-paper-500">
-                      {entry.description}
+                      {blocked ?? entry.description}
                     </p>
                   </div>
                   <button
