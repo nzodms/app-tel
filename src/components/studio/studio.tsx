@@ -20,6 +20,7 @@ import { previewRegistry } from './preview-registry';
 import { Toolbar } from './toolbar';
 import { Timeline } from './timeline';
 import { EdgeCasesPanel } from './edge-cases-panel';
+import { CompareStage } from './canvas/compare-stage';
 import { ClaudeActivityStrip } from './claude-activity-strip';
 import { CommandPalette, useCommandShortcuts } from './command-palette';
 import { PresentationChrome, useViewMode } from './presentation-chrome';
@@ -320,6 +321,9 @@ function StudioShell() {
           <div className="relative min-h-0 flex-1">
             <Canvas />
             {chrome.edgeCases ? <EdgeCasesPanel /> : null}
+            {/* Before/after, over the canvas. Renders nothing unless compare
+                mode is on, and its two frames are deliberately not devices. */}
+            <CompareStage />
             {/* Claude, working, as it happens. Absent entirely when nothing is
                 happening — an idle studio shows no strip, not an empty one. */}
             <ClaudeActivityStrip />
