@@ -193,14 +193,28 @@ export function parseShortcut(shortcut: string): ParsedShortcut {
 /**
  * Exact match, including the modifiers that were *not* asked for: `f` must not
  * fire on ⌘F (the browser's find), and `mod+s` must not fire on ⌘⇧S.
+ *
+ * One exception, and only one: a key whose *name* changed because Shift was
+ * held. On a US layout the key labelled `+` is Shift and `=`, and the browser
+ * reports `event.key === '+'` — so a strict shift comparison made `mod+=` refuse
+ * the exact keystroke the palette draws as `⌘ +`. A cap that names a chord which
+ * does nothing is a lie about the surface, so when the alias table is what
+ * matched, shift is considered already accounted for. Nothing else relaxes:
+ * `f` still must not fire on ⇧F, because `F` normalises to `f` with no alias.
  */
+function shiftIsPartOfTheKeyName(event: KeyboardEvent): boolean {
+  const raw = event.key.toLowerCase();
+  return event.shiftKey && raw !== normaliseKey(event.key) && KEY_ALIASES[raw] !== undefined;
+}
+
 export function shortcutMatches(shortcut: string, event: KeyboardEvent): boolean {
   const parsed = parseShortcut(shortcut);
   const mod = event.metaKey || event.ctrlKey;
   if (parsed.mod !== mod) return false;
-  if (parsed.shift !== event.shiftKey) return false;
   if (parsed.alt !== event.altKey) return false;
-  return normaliseKey(event.key) === parsed.key;
+  if (normaliseKey(event.key) !== parsed.key) return false;
+  if (parsed.shift !== event.shiftKey) return shiftIsPartOfTheKeyName(event) && !parsed.shift;
+  return true;
 }
 
 const MAC_MODIFIERS: Record<'mod' | 'shift' | 'alt', string> = {
@@ -318,8 +332,31 @@ function fileName(path: string): string {
 /* The registry                                                                */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The declared order of `CommandGroup`, as data.
+ *
+ * The palette starts a new section every time the group changes as it walks the
+ * list, so a group that appears twice in this array draws its heading twice.
+ * That used to happen: `viewModeCommands` contributes one `Canvas` command and
+ * one `Project` command, and splicing it in after `panelCommands` put a second
+ * `Canvas` heading below `Panels` on every open. Sorting by this makes the
+ * comment above — one sequence, not two — true by construction rather than by
+ * everyone remembering to append in the right place.
+ */
+const GROUP_ORDER: readonly CommandGroup[] = [
+  'Canvas',
+  'Arrange',
+  'Devices',
+  'Preview',
+  'Files',
+  'Versions',
+  'Journeys',
+  'Panels',
+  'Project',
+];
+
 export function studioCommands(state: StudioStore, host: CommandHost = {}): Command[] {
-  return [
+  const commands = [
     ...canvasCommands(state),
     ...arrangeCommands(),
     ...deviceCommands(state),
@@ -334,6 +371,16 @@ export function studioCommands(state: StudioStore, host: CommandHost = {}): Comm
     ...viewModeCommands(state),
     ...projectCommands(state, host),
   ];
+
+  // Stable, so the order *within* a group is still the order it was written in.
+  return commands
+    .map((command, index) => ({ command, index }))
+    .sort(
+      (a, b) =>
+        GROUP_ORDER.indexOf(a.command.group) - GROUP_ORDER.indexOf(b.command.group) ||
+        a.index - b.index,
+    )
+    .map((entry) => entry.command);
 }
 
 /* ------------------------------------------------------------------ canvas - */
@@ -590,7 +637,12 @@ function previewCommands(state: StudioStore): Command[] {
       group: 'Preview',
       keywords: 'restore recover broken build failed',
       enabled: (current) => {
-        if (failedBundleKey(current) === null) return 'Nothing to recover — every preview compiled.';
+        // Only "no bundle is in the `error` state" is observed here. That is not
+        // the same as "every preview compiled": a bundle that is still
+        // `building`, or that has never been built at all (the studio's first
+        // seconds, before `rebuildAll` resolves), is also not failing. Saying
+        // the stronger thing would be claiming a build result nothing reported.
+        if (failedBundleKey(current) === null) return 'Nothing to recover — no preview is failing.';
         if (current.versions.length === 0) return 'There is no snapshot to fall back on.';
         return true;
       },
@@ -607,16 +659,31 @@ function previewCommands(state: StudioStore): Command[] {
          * menu item, so this reports what actually happened by reading the
          * bundle back: `recoveredFrom` is written only when a snapshot really
          * was put on screen.
+         *
+         * Four outcomes, each read off the bundle rather than assumed. The last
+         * two are why this is not a single if/else: `recoverLastWorking` leaves
+         * `status` at 'error', so the row stays enabled and a second press finds
+         * the same snapshot again. Comparing only `before`/`after` reported that
+         * successful re-run as "no recent snapshot compiles", which was the
+         * opposite of what had just happened.
          */
         const after = store.getState().bundles[key];
-        if (after?.recoveredFrom && after.recoveredFrom !== before) {
-          store
-            .getState()
-            .notify('success', `Showing “${after.recoveredFrom}” — the newest snapshot that compiles.`);
-        } else if (after?.status !== 'ready') {
+        const recovered = after?.recoveredFrom ?? null;
+        if (after?.status === 'ready') {
+          store.getState().notify('success', 'That preview compiles again — nothing needed restoring.');
+        } else if (recovered === null) {
           store
             .getState()
             .notify('error', 'No recent snapshot compiles either — there is nothing to put back on screen.');
+        } else if (recovered !== before) {
+          store
+            .getState()
+            .notify('success', `Showing “${recovered}” — the newest snapshot that compiles.`);
+        } else {
+          // Same snapshot as before this ran. It is on screen — that much the
+          // bundle says — and nothing here knows whether this attempt or the
+          // previous one put it there, so it does not claim either.
+          store.getState().notify('info', `Still showing “${recovered}”.`);
         }
       },
     },

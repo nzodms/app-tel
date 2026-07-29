@@ -700,10 +700,13 @@ function Mark({
   onRun,
 }: {
   node: NodeView;
+  /** There is room for this mark's name. Decided by measurement, not by count. */
   roomy: boolean;
+  /** Nothing precedes it, so it has no rail segment to draw. */
   first: boolean;
+  /** The last thing that happened. Carries a ring, so the head of the line shows. */
   newest: boolean;
-  /** The newest mark carries a ring, so "where the line has got to" is visible. */
+  /** Its event has just arrived, so its rail segment may draw itself in. */
   grow: boolean;
   onRun: (action: NodeAction) => void;
 }) {
@@ -943,9 +946,11 @@ function Divider() {
 /**
  * Compact controls shown while a replay is running.
  *
- * Kept, unchanged in behaviour, and still exported — but nothing in the studio
- * renders it today (see the report): the replay's only on-screen controls are
- * the badge and progress bar above.
+ * Kept and still exported, but dead: nothing in `src/` renders it, and the Stop
+ * control a running replay actually shows comes from the toolbar
+ * (`toolbar.tsx`, which reads the same `stopReplay`). Left in place rather than
+ * deleted because removing it is a decision about the toolbar's design, not
+ * about this strip — but it should not be mistaken for something on screen.
  */
 export function ReplayControls() {
   const replay = useStudio((state) => state.replay);

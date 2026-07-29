@@ -150,6 +150,29 @@ function ViewChromeBar({ view }: { view: ViewModeState }) {
   /* --------------------------------------------------------------- leaving */
 
   useEffect(() => {
+    /*
+     * Whether the studio's own Escape had something to close, read BEFORE
+     * anyone acted on the key.
+     *
+     * This has to be a capture-phase reading rather than a store read from the
+     * handler below. studio.tsx registers its Escape handler on `window` when
+     * the shell mounts — long before this bar exists, since the bar only mounts
+     * once a mode is entered — so on a shared target and a shared phase it runs
+     * first, and it clears `inspectMode` / `inspector` synchronously without
+     * calling preventDefault. By the time the bubble handler here read the
+     * store, the thing it was meant to defer to had already been closed and it
+     * looked like there was nothing to defer to: one press cancelled inspect
+     * mode AND left the view mode. Capture runs before every bubble handler, so
+     * this sees the state the key was actually pressed against.
+     */
+    const studioOwnsEscape = { current: false };
+
+    const onCapture = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const state = store.getState();
+      studioOwnsEscape.current = state.inspectMode || state.inspector !== null;
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
 
@@ -170,15 +193,18 @@ function ViewChromeBar({ view }: { view: ViewModeState }) {
 
       // And so does anything the studio's own Escape already means, so one
       // press never does two things.
-      const state = store.getState();
-      if (state.inspectMode || state.inspector) return;
+      if (studioOwnsEscape.current) return;
 
       event.preventDefault();
       leaveViewMode();
     };
 
+    window.addEventListener('keydown', onCapture, true);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onCapture, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [store]);
 
   /*

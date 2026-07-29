@@ -542,8 +542,13 @@ function PaletteSurface({
               No command matches “{query}”.
             </p>
           ) : (
-            sections.map((section) => (
-              <div key={section.group} role="group" aria-label={section.group}>
+            // Keyed by position, not by group name: sorting is global and the
+            // groups follow it, so one group can legitimately appear more than
+            // once ("zoom" scores two Canvas commands either side of a Devices
+            // one). `key={section.group}` collided the moment that happened, and
+            // React reconciles duplicate keys by dropping rows.
+            sections.map((section, position) => (
+              <div key={`${section.group}-${position}`} role="group" aria-label={section.group}>
                 <div aria-hidden="true">
                   <MenuLabel>{section.group}</MenuLabel>
                 </div>
