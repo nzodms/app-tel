@@ -325,8 +325,15 @@ function StudioShell() {
                 mode is on, and its two frames are deliberately not devices. */}
             <CompareStage />
             {/* Claude, working, as it happens. Absent entirely when nothing is
-                happening — an idle studio shows no strip, not an empty one. */}
-            <ClaudeActivityStrip />
+                happening — an idle studio shows no strip, not an empty one.
+
+                The strip has no position of its own, so the corner is chosen
+                here. Mounted without one it laid out as an ordinary block after
+                the canvas — which is `h-full` — and rendered below the fold,
+                i.e. it worked and you could never see it. Top-left is the corner
+                nothing else claims: Edge Case Studio top-right, inspector card
+                bottom-left, timeline pill bottom-centre. */}
+            <ClaudeActivityStrip className="absolute left-3 top-3 z-30" />
             {inspector ? (
               <InspectorCard
                 sourceRef={inspector.sourceRef}

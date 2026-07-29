@@ -290,8 +290,19 @@ function describe(
         break;
       case 'mcp':
         tone = CLAUDE_TONE;
-        // A call that wrote a file is a change to the project; one that did not
-        // is Claude looking around. Filled and hollow say which without a legend.
+        /*
+         * Filled = this call named a file. Hollow = it did not.
+         *
+         * That is all the ring claims, and all it can claim. It is NOT "Claude
+         * looking around": Claude's read tools (`read_file`, `read_files`,
+         * `search_code`, `list_files`) log no event at all, so a read never
+         * reaches this strip. The calls that log without naming a file are the
+         * ones that changed something else — a device (`create_device`,
+         * `set_device_state`) or a version (`create_version`,
+         * `restore_version`). Hollow therefore means "Claude changed something
+         * that is not a file", which is exactly why the mark still carries the
+         * event's own name in its tooltip and its label.
+         */
         hollow = path === null;
         break;
       case 'journey':
@@ -588,7 +599,14 @@ export function Timeline() {
 
         {replaying ? (
           <Badge tone="accent">
-            Replaying · step {replayStep + 1}/{Math.max(replayTotal, 1)}
+            {/* The fraction is drawn only when there is a real denominator.
+                `update_journey` accepts an empty `steps` array (unlike
+                `create_journey`, which requires one), so a journey can be left
+                with no steps and still be run — and `Math.max(total, 1)` would
+                turn that into "step 1/1", a step that does not exist, under a
+                progress bar sitting at 100%. Say the one thing that is known
+                instead: a replay is running. */}
+            {replayTotal > 0 ? `Replaying · step ${replayStep + 1}/${replayTotal}` : 'Replaying'}
           </Badge>
         ) : null}
 
@@ -675,11 +693,14 @@ export function Timeline() {
         </>
       ) : null}
 
-      {replaying ? (
+      {/* No steps, no progress: a bar needs a real denominator to mean anything,
+          and a full bar for a journey with nothing in it is a drawing of
+          progress rather than a report of it. */}
+      {replaying && replayTotal > 0 ? (
         <div className="absolute inset-x-0 bottom-0 h-[2px] bg-paper-150">
           <div
             className="h-full bg-azure-500 transition-[width] duration-200 [transition-timing-function:var(--ease-out-quint)]"
-            style={{ width: `${((replayStep + 1) / Math.max(replayTotal, 1)) * 100}%` }}
+            style={{ width: `${((replayStep + 1) / replayTotal) * 100}%` }}
           />
         </div>
       ) : null}
