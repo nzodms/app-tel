@@ -8,6 +8,8 @@ import { useStudio } from '../context';
 import { DeviceChassis } from './device-chassis';
 import { PreviewFrame } from './preview-frame';
 import { BuildErrorCard } from './build-error-card';
+import { BuildStateOverlay } from './build-state-overlay';
+import { deriveBuildPhase, derivePreviewPresence } from '../build-phase';
 import { DeviceActionBar } from './device-action-bar';
 import { canvasApi } from './canvas-api';
 
@@ -38,6 +40,9 @@ export const DeviceNode = memo(function DeviceNode({
   const resolveSheet = useStudio((state) => state.resolveSheet);
   const replayStep = useStudio((state) => state.replay?.step ?? null);
   const replayActive = useStudio((state) => Boolean(state.replay));
+  const projectName = useStudio((state) => state.snapshot.project.name);
+  // What the server will compile until a build has answered with its own value.
+  const entryFile = useStudio((state) => state.snapshot.project.entryFile);
 
   const preset = getPreset(device.presetId);
   const geometry = deviceGeometry(preset, device.orientation);
@@ -75,11 +80,21 @@ export const DeviceNode = memo(function DeviceNode({
       {/* Build failure is shown *inside* the device: that is where you are looking. */}
       {bundle?.status === 'error' ? <BuildErrorCard deviceId={device.id} bundle={bundle} /> : null}
 
-      {bundle?.status === 'building' ? (
-        <div className="absolute inset-x-0 top-0 z-[56] h-[2px] overflow-hidden">
-          <div className="h-full w-1/3 animate-[pl-slide_1.1s_ease-in-out_infinite] bg-azure-500" />
-        </div>
-      ) : null}
+      {/* Every other build state. The phase is derived from what is genuinely
+          known — including whether the frame has actually mounted the code, which
+          is a separate fact from the build having succeeded, and the reason a
+          phone could read "ready" while showing nothing. */}
+      <BuildStateOverlay
+        phase={deriveBuildPhase(bundle, Boolean(chrome?.mounted))}
+        deviceId={device.id}
+        projectName={projectName}
+        roleLabel={role.label}
+        roleColor={roleColor(device.role)}
+        theme={device.theme}
+        entry={bundle?.entry ?? entryFile}
+        lastBuildMs={bundle?.lastCompletedMs ?? null}
+        hasPreview={derivePreviewPresence(bundle, Boolean(chrome?.mounted)) !== 'none'}
+      />
     </>
   );
 

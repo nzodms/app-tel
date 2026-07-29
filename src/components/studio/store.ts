@@ -668,6 +668,10 @@ export function createStudioStore(snapshot: StudioSnapshot) {
             stale: existing?.stale ?? false,
             diagnostics: [],
             durationMs: null,
+            // Survives the rebuild: "last build 340ms" is a fact about the
+            // previous one, and `durationMs` is cleared exactly when it is asked.
+            lastCompletedMs: existing?.lastCompletedMs ?? existing?.durationMs ?? null,
+            entry: existing?.entry ?? null,
             bytes: null,
             error: null,
           },
@@ -683,6 +687,8 @@ export function createStudioStore(snapshot: StudioSnapshot) {
           diagnostics: Diagnostic[];
           durationMs: number;
           bytes: number;
+          /** The route has always returned this; nothing read it until now. */
+          entry?: string;
         }>(`/api/projects/${get().snapshot.project.id}/preview/build`, {
           body: { ref: key, force: force ?? false },
         });
@@ -701,6 +707,8 @@ export function createStudioStore(snapshot: StudioSnapshot) {
           lastGoodHash: result.ok ? result.hash : (previous?.lastGoodHash ?? previous?.hash ?? null),
           diagnostics: result.diagnostics,
           durationMs: result.durationMs,
+          lastCompletedMs: result.durationMs,
+          entry: result.entry ?? previous?.entry ?? null,
           bytes: result.bytes,
           error: result.ok ? null : (result.diagnostics[0]?.message ?? 'Build failed'),
           stale: !result.ok && Boolean(previous?.lastGoodCode ?? previous?.code),
@@ -768,6 +776,8 @@ export function createStudioStore(snapshot: StudioSnapshot) {
           lastGoodHash: previous?.lastGoodHash ?? previous?.hash ?? null,
           diagnostics: [diagnostic],
           durationMs: null,
+          lastCompletedMs: previous?.lastCompletedMs ?? previous?.durationMs ?? null,
+          entry: previous?.entry ?? null,
           bytes: null,
           error: diagnostic.message,
           stale: Boolean(previous?.lastGoodCode ?? previous?.code),

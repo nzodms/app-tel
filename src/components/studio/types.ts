@@ -70,6 +70,22 @@ export interface BundleState {
   lastGoodHash: string | null;
   diagnostics: Diagnostic[];
   durationMs: number | null;
+  /**
+   * The last duration that a build actually *completed* in.
+   *
+   * Distinct from `durationMs`, which the store clears the moment a rebuild
+   * starts — exactly when a "last build 340ms" line wants to read it. Kept for
+   * failures too, so it is the last build, not the last successful one, and the
+   * UI must not claim otherwise.
+   */
+  lastCompletedMs: number | null;
+  /**
+   * The entry file this bundle was compiled from, as the server reports it.
+   *
+   * The build route has always returned it and nothing read it, so the studio
+   * could not say what it had compiled. Null until a build has answered.
+   */
+  entry: string | null;
   bytes: number | null;
   error: string | null;
   /** True when what the phone is showing is older than the current sources. */

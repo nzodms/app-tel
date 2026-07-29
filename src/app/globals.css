@@ -75,15 +75,19 @@
   --color-azure-600: #1657c7;
   --color-azure-700: #1246a1;
 
-  /* Semantics. */
-  --color-positive-50: #eefbf3;
-  --color-positive-200: #b6e8ca;
+  /* Semantics. The tint steps are routed through :root for the same reason the
+     paper ramp is: they are remapped by the dark theme, and anything drawn
+     inside a device screen has to be able to get the light ones back. The -500
+     solids are not — they carry white text and read correctly on both. */
+  --color-positive-50: var(--pl-positive-50);
+  --color-positive-200: var(--pl-positive-200);
   --color-positive-500: #1a9b5c;
-  --color-positive-700: #0f6f41;
-  --color-caution-50: #fff8ec;
-  --color-caution-200: #f8dfae;
+  --color-positive-600: var(--pl-positive-600);
+  --color-positive-700: var(--pl-positive-700);
+  --color-caution-50: var(--pl-caution-50);
+  --color-caution-200: var(--pl-caution-200);
   --color-caution-500: #c07d10;
-  --color-caution-700: #8f5c07;
+  --color-caution-700: var(--pl-caution-700);
   /* Danger's tint trio is routed through :root for the same reason the paper
      ramp is: the build-failure card is drawn inside a device screen, and a
      device is not allowed to change with the studio theme. */
@@ -148,6 +152,16 @@
     --pl-paper-800: #2b3037;
     --pl-paper-900: #191d22;
     --pl-paper-950: #0f1216;
+    --pl-positive-50: #eefbf3;
+    --pl-positive-200: #b6e8ca;
+    /* Referenced by new-project-form.tsx and never defined, so Tailwind emitted
+       nothing and that check icon inherited its surrounding colour instead of
+       being green. Interpolated between 500 and 700. */
+    --pl-positive-600: #14834d;
+    --pl-positive-700: #0f6f41;
+    --pl-caution-50: #fff8ec;
+    --pl-caution-200: #f8dfae;
+    --pl-caution-700: #8f5c07;
     --pl-danger-50: #fef2f2;
     /* 100 and 600 were referenced by components and never defined, so Tailwind
        emitted no rule at all: the danger button had no hover state and the
@@ -289,6 +303,7 @@
     --color-caution-700: #e8b562;
     --color-positive-50: #12261c;
     --color-positive-200: #235339;
+    --color-positive-600: #4bbd85;
     --color-positive-700: #62d29a;
 
     /* slate-code-* is deliberately not remapped. It was already a dark family in
@@ -394,6 +409,17 @@
     --color-danger-200: var(--pl-danger-200);
     --color-danger-600: var(--pl-danger-600);
     --color-danger-700: var(--pl-danger-700);
+    /* caution and positive too. Nothing inside a device reaches for these today,
+       which is exactly why they were missed — and why the next person to write
+       `bg-caution-50` inside a phone would have got a surface that follows the
+       studio while the phone around it stayed light. */
+    --color-caution-50: var(--pl-caution-50);
+    --color-caution-200: var(--pl-caution-200);
+    --color-caution-700: var(--pl-caution-700);
+    --color-positive-50: var(--pl-positive-50);
+    --color-positive-200: var(--pl-positive-200);
+    --color-positive-600: var(--pl-positive-600);
+    --color-positive-700: var(--pl-positive-700);
     --pl-shadow-float: var(--pl-shadow-float-light);
   }
 
@@ -476,6 +502,10 @@
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      /* Without this, an infinite animation is not stopped — it is re-sampled at
+         a near-arbitrary phase every frame, which is jitter rather than
+         stillness, and worse than the motion it replaced. */
+      animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
   }
@@ -486,6 +516,7 @@
   [data-reduce-motion='true'] *::before,
   [data-reduce-motion='true'] *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }

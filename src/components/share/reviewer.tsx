@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Lock, MessageSquarePlus, RotateCcw, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { api, errorText } from '@/lib/api-client';
-import { deviceGeometry, getPreset } from '@/lib/devices/presets';
+import { DEFAULT_PRESET_ID, deviceGeometry, getPreset } from '@/lib/devices/presets';
 import { isPreviewMessage, type PreviewMessage } from '@/lib/preview/protocol';
 import { Badge, Button, Card, Field, Input, Textarea } from '@/components/ui/primitives';
 import { Wordmark } from '@/components/brand/logo';
@@ -31,6 +31,8 @@ interface OpenPayload {
   version?: { id: string | null; label: string; description: string };
   roles?: { slug: string; label: string; defaultUser: string | null }[];
   presetId?: string;
+  /** Format per role, so switching role shows the device that role is used on. */
+  presetsByRole?: Record<string, string>;
   bundle?: { code: string | null; hash: string | null; error?: string };
   comparison?: { versionId: string; label: string; code: string; hash: string } | null;
   threads?: {
@@ -225,7 +227,9 @@ function ReviewerStage({
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [showCompare, setShowCompare] = useState(false);
 
-  const preset = getPreset(payload.presetId ?? 'iphone-17-pro');
+  // The format follows the role: a project whose admin works on a laptop and
+  // whose customer is on a phone is reviewed on both, not on one of them twice.
+  const preset = getPreset(payload.presetsByRole?.[role] ?? payload.presetId ?? DEFAULT_PRESET_ID);
   const canComment = payload.share?.access === 'comment';
 
   return (

@@ -6,7 +6,8 @@ import { openShareLink, recordShareView, reviewerRoles, toPublicShare } from '@/
 import { projectRoles } from '@/server/services/projects';
 import { latestVersion, listVersions } from '@/server/services/versions';
 import { listThreads } from '@/server/services/comments';
-import { getPreset, DEFAULT_PRESET_ID } from '@/lib/devices/presets';
+import { listDevices } from '@/server/services/devices';
+import { getPreset, isPresetId, DEFAULT_PRESET_ID } from '@/lib/devices/presets';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -42,11 +43,32 @@ export const POST = route(async (request: Request, ctx: Ctx) => {
 
   const ref = link.versionId ?? 'working';
   const build = await buildPreview(store, project.id, ref, 'system');
-  const [roles, versions, threads] = await Promise.all([
+  const [roles, versions, threads, devices] = await Promise.all([
     projectRoles(store, project),
     listVersions(store, project.id),
     listThreads(store, project.id, { status: 'open' }),
+    listDevices(store, project.id),
   ]);
+
+  /**
+   * The format each role is reviewed on.
+   *
+   * This used to be the default preset, always — so a project built for a
+   * MacBook was reviewed on a phone, and a reviewer's feedback was about a
+   * layout nobody was shipping. It follows the canvas instead: whatever device
+   * the owner put that role on. Unknown ids fall back rather than throwing,
+   * because a preset can be removed from the catalogue while rows still name it.
+   *
+   * Only the preset id crosses: no positions, no version pins, no edge-case
+   * flags. A reviewer still learns nothing about the canvas.
+   */
+  const presetForRole = new Map<string, string>();
+  for (const device of devices) {
+    if (!isPresetId(device.presetId)) continue;
+    if (!presetForRole.has(device.role)) presetForRole.set(device.role, device.presetId);
+  }
+  const firstDevicePreset = devices.find((device) => isPresetId(device.presetId))?.presetId;
+  const defaultPresetId = firstDevicePreset ?? DEFAULT_PRESET_ID;
 
   const allowedRoles = reviewerRoles(
     link,
@@ -81,8 +103,9 @@ export const POST = route(async (request: Request, ctx: Ctx) => {
       ? { id: pinned.id, label: pinned.label, description: pinned.description }
       : { id: null, label: 'Working tree', description: '' },
     roles: roles.filter((role) => allowedRoles.includes(role.slug)),
-    presetId: DEFAULT_PRESET_ID,
-    viewport: getPreset(DEFAULT_PRESET_ID).viewport,
+    presetId: defaultPresetId,
+    presetsByRole: Object.fromEntries(presetForRole),
+    viewport: getPreset(defaultPresetId).viewport,
     bundle: build.ok
       ? { code: build.code, hash: build.hash }
       : { code: null, hash: null, error: build.diagnostics[0]?.message ?? 'Build failed' },
