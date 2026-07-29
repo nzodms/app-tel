@@ -132,15 +132,18 @@ export function AccountSettings({
           These follow your account between machines.
         </p>
         <div className="mt-3 divide-y divide-paper-150">
+          {/* The label used to promise snapping to a 20px grid. `snapRect`
+              aligns to neighbours only — its own docblock says "no grid lock-in"
+              — so the setting described something that never happened. */}
           <Toggle
-            label="Snap phones to a grid"
-            hint="Dragging a phone snaps to 20px and to the edges of its neighbours."
+            label="Align phones to each other"
+            hint="Dragging a phone snaps to its neighbours' edges and centres, with a guide line."
             checked={prefs.canvasSnap}
             onChange={(value) => toggle('canvasSnap', value)}
           />
           <Toggle
             label="Show the canvas grid"
-            hint="A faint dot grid behind the phones."
+            hint="A faint dot lattice behind the phones. Off by default: the canvas reads as a lit surface, and a grid over it reads as graph paper."
             checked={prefs.canvasGrid}
             onChange={(value) => toggle('canvasGrid', value)}
           />

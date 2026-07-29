@@ -1,7 +1,7 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { deviceGeometry, type DevicePreset } from '@/lib/devices/presets';
+import type { CSSProperties, ReactNode } from 'react';
+import { deviceGeometry, type DeviceGeometry, type DevicePreset } from '@/lib/devices/presets';
 import type { PreviewNotification } from '@/lib/preview/protocol';
 import { GLASS_SHEEN } from './chassis';
 import { DeviceCutout, type IslandContent } from './dynamic-island';
@@ -9,6 +9,7 @@ import { KeyboardLayer, NotificationLayer, SystemSheetLayer, type SystemSheet } 
 import { HomeIndicator, StatusBar, type StatusBarState } from './status-bar';
 import { PhoneChassis } from './phone';
 import { SurfaceChassis } from './surface-chassis';
+import { useDeviceMorph } from './use-device-morph';
 
 /**
  * A device on the canvas: the object, and the display in it.
@@ -25,17 +26,28 @@ import { SurfaceChassis } from './surface-chassis';
  * So the skeleton here is fixed:
  *
  *     <div>                     ← chassis-sized box
- *       {chassis art}           ← slot 0, swaps freely; contains no iframe
- *       <DeviceScreen>          ← slot 1, ALWAYS this component
+ *       {outgoing art}          ← slot 0a, present only mid-morph
+ *       {chassis art}           ← slot 0b, swaps freely; contains no iframe
+ *       <DeviceScreen>          ← slot 2, ALWAYS this component
  *         {children}            ← the preview, never re-parented
  *
- * React reconciles children by position, so only slot 0 is torn down when the
- * family changes. Slot 1 keeps its instance, its DOM node, and the live app.
+ * React reconciles children by position, and a JSX children list keeps its length
+ * whether or not a slot is `null` — so only the art slots are ever torn down when
+ * the family changes. The display keeps its instance, its DOM node, and the live
+ * app.
  *
  * The rule that follows: **nothing in a chassis component may render `children`,
  * and no chassis may draw above the display.** Both hold today — every family's
  * art is casters, rail, bezel, buttons or window chrome, all of it behind the
  * screen box, plus a selection ring that sits outside the chassis rect entirely.
+ *
+ * **The morph.** Slot 0 holds two layers rather than one for the ~300ms it takes
+ * one format to become another: the object being left and the object being
+ * arrived at, each drawn at its own natural size and mapped onto the other with a
+ * transform, cross-fading. The display is not part of that swap — it cannot be —
+ * so it stays put and is moved, and clipped, around an app that resizes once. All
+ * of the arithmetic and all of the timing is in `use-device-morph.ts`; this file
+ * only spends it. Read that header before changing anything below.
  */
 
 export interface DeviceChromeState {
@@ -75,6 +87,34 @@ export function isHandheld(preset: DevicePreset): boolean {
   return preset.family === 'phone' || preset.family === 'tablet';
 }
 
+/**
+ * The display's corners.
+ *
+ * A window's display meets a title bar along a straight line at the top and the
+ * shell's own corners at the bottom, so only the bottom two are rounded. Every
+ * other family's display is rounded all the way round, like the object holding
+ * it.
+ *
+ * Emitted as one CSS string rather than a number because it is used twice: as the
+ * box's `border-radius`, and as the `round` of the `clip-path` that opens the
+ * display's aperture during a morph. Those two have to agree, or a growing device
+ * shows square corners on the sides that are still being revealed.
+ */
+function screenRadiusCss(preset: DevicePreset, geometry: DeviceGeometry): string {
+  const radius = geometry.screenRadius;
+  return preset.family === 'desktop' || preset.family === 'browser'
+    ? `0px 0px ${radius}px ${radius}px`
+    : `${radius}px`;
+}
+
+/**
+ * Layers that belong to a *family* rather than to a device: the glass sheen a
+ * window does not have, and the replay dim. Both are always mounted and carried
+ * on opacity so they dissolve with the object instead of being dropped in one
+ * frame; at opacity 0 a layer is not painted, so this costs nothing at rest.
+ */
+const LAYER_FADE = '200ms var(--ease-in-out-quad)';
+
 export function DeviceChassis({
   preset,
   orientation,
@@ -89,24 +129,63 @@ export function DeviceChassis({
   onResolveSheet,
 }: DeviceChassisProps) {
   const geometry = deviceGeometry(preset, orientation);
+  const radius = screenRadiusCss(preset, geometry);
+  const morph = useDeviceMorph({ preset, orientation, geometry, screenRadius: radius });
 
   return (
     <div
       className="relative"
       style={{ width: geometry.chassis.width, height: geometry.chassis.height }}
     >
-      {isHandheld(preset) ? (
-        <PhoneChassis preset={preset} orientation={orientation} selected={selected} />
-      ) : (
-        <SurfaceChassis
-          preset={preset}
-          orientation={orientation}
-          theme={theme}
-          selected={selected}
-          address={route ?? null}
-          title={title ?? null}
-        />
-      )}
+      {/* Slot 0a — the object being left behind, drawn at its own size and scaled
+          onto the new one as it fades. Only ever mounted mid-morph, inert while
+          it is: it is a picture of a device that no longer exists, so it must not
+          take a pointer. */}
+      {morph.leaving ? (
+        <div
+          aria-hidden="true"
+          // Marked so a browser probe can prove the cross-fade really happens.
+          // "One device becoming another" is a claim about two layers overlapping
+          // for ~300ms, and a claim like that should be checkable against the DOM.
+          data-pl-morph="leaving"
+          className="pointer-events-none absolute left-0 top-0"
+          style={morph.leavingStyle}
+        >
+          {isHandheld(morph.leaving.preset) ? (
+            <PhoneChassis
+              preset={morph.leaving.preset}
+              orientation={morph.leaving.orientation}
+              selected={selected}
+            />
+          ) : (
+            <SurfaceChassis
+              preset={morph.leaving.preset}
+              orientation={morph.leaving.orientation}
+              theme={theme}
+              selected={selected}
+              address={route ?? null}
+              title={title ?? null}
+            />
+          )}
+        </div>
+      ) : null}
+
+      {/* Slot 0b — the object it is becoming. At rest this layer is the chassis
+          box exactly, with no transform and no compositing hint of any kind. */}
+      <div data-pl-morph="arriving" className="absolute left-0 top-0" style={morph.arrivingStyle}>
+        {isHandheld(preset) ? (
+          <PhoneChassis preset={preset} orientation={orientation} selected={selected} />
+        ) : (
+          <SurfaceChassis
+            preset={preset}
+            orientation={orientation}
+            theme={theme}
+            selected={selected}
+            address={route ?? null}
+            title={title ?? null}
+          />
+        )}
+      </div>
 
       <DeviceScreen
         preset={preset}
@@ -114,6 +193,8 @@ export function DeviceChassis({
         theme={theme}
         chrome={chrome}
         dimmed={Boolean(dimmed)}
+        radius={radius}
+        morphStyle={morph.screenStyle}
         onDismissNotification={onDismissNotification}
         onResolveSheet={onResolveSheet}
       >
@@ -134,6 +215,14 @@ export function DeviceChassis({
  * No inset ring on the box itself: an inset shadow paints *under* an element's
  * children, so the iframe would hide it the instant the preview mounted. The
  * display edge is drawn as its own layer above the app, at the bottom.
+ *
+ * `morphStyle` is the only thing a format change is allowed to do to this box, and
+ * it is deliberately narrow: a translation and an aperture, both empty at rest.
+ * Never a scale — an iframe under a scaling ancestor rasterises at the wrong
+ * resolution and goes soft, and scaling the app would be a claim about its layout
+ * that is not true. The width and the height here change in one frame, in the same
+ * commit that hands the frame its new viewport, so the box and the app inside it
+ * are never a different size from each other.
  */
 function DeviceScreen({
   preset,
@@ -141,6 +230,8 @@ function DeviceScreen({
   theme,
   chrome,
   dimmed,
+  radius,
+  morphStyle,
   children,
   onDismissNotification,
   onResolveSheet,
@@ -150,6 +241,8 @@ function DeviceScreen({
   theme: 'light' | 'dark';
   chrome: DeviceChromeState;
   dimmed: boolean;
+  radius: string;
+  morphStyle: CSSProperties;
   children: ReactNode;
   onDismissNotification: (id: string) => void;
   onResolveSheet: (sheetId: string, allowed: boolean) => void;
@@ -157,14 +250,6 @@ function DeviceScreen({
   const geometry = deviceGeometry(preset, orientation);
   const landscape = geometry.landscape;
   const handheld = isHandheld(preset);
-  // A window's display meets a title bar along a straight line at the top and the
-  // shell's own corners at the bottom, so only the bottom two are rounded. Every
-  // other family's display is rounded all the way round, like the object holding
-  // it.
-  const windowed = preset.family === 'desktop' || preset.family === 'browser';
-  const radius = windowed
-    ? `0 0 ${geometry.screenRadius}px ${geometry.screenRadius}px`
-    : geometry.screenRadius;
 
   /**
    * Whether a status bar is drawn at all.
@@ -195,6 +280,7 @@ function DeviceScreen({
         height: geometry.screen.height,
         borderRadius: radius,
         background: theme === 'dark' ? '#0e1116' : '#f5f6f8',
+        ...morphStyle,
       }}
     >
       <div className="absolute inset-0">{children}</div>
@@ -237,22 +323,34 @@ function DeviceScreen({
       {/* Glass, on the families that are a piece of glass. A window is not one.
           Held at 0.75: the sweep peaks at 16% white, and on a large preset at
           100–125% that is a visible haze over the top-left of the app rather than
-          a highlight on glass. Dialled back it still reads as glass at 50%. */}
-      {handheld ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-[60]"
-          style={{ background: GLASS_SHEEN, borderRadius: radius, opacity: 0.75 }}
-        />
-      ) : null}
+          a highlight on glass. Dialled back it still reads as glass at 50%.
 
-      {dimmed ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-[61]"
-          style={{ background: 'rgba(10,12,16,0.35)' }}
-        />
-      ) : null}
+          Mounted for every family and carried on opacity, so that a phone
+          becoming a MacBook loses its glass over the same beat as its bezel
+          instead of in one frame. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[60]"
+        style={{
+          background: GLASS_SHEEN,
+          borderRadius: radius,
+          opacity: handheld ? 0.75 : 0,
+          transition: `opacity ${LAYER_FADE}`,
+        }}
+      />
+
+      {/* Replay: every device that is not the one being replayed steps back. Also
+          a fade rather than a cut — the state is real, the switch into it is not
+          an event worth a flash. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[61]"
+        style={{
+          background: 'rgba(10,12,16,0.35)',
+          opacity: dimmed ? 1 : 0,
+          transition: `opacity ${LAYER_FADE}`,
+        }}
+      />
 
       {/* Display edge: the panel catching light where it meets what holds it.
           Above everything, because it is the edge of the screen and not part of

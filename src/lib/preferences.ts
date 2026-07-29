@@ -12,6 +12,12 @@ export interface UserPreferences {
   leftPaneWidth: number;
   editorMinimap: boolean;
   canvasSnap: boolean;
+  /**
+   * Off by default. The canvas reads as a lit surface — a wide falloff and a
+   * faint grain — and a ruled grid over it made it read as graph paper instead
+   * of as a bench. It stays available for people who want to align by eye, and
+   * when it is on it is a quiet dot lattice rather than the old ruling.
+   */
   canvasGrid: boolean;
   reduceMotion: boolean;
 }
@@ -21,6 +27,6 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   leftPaneWidth: 25,
   editorMinimap: false,
   canvasSnap: true,
-  canvasGrid: true,
+  canvasGrid: false,
   reduceMotion: false,
 };

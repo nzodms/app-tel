@@ -40,6 +40,16 @@ import {
 
 const SNAP_THRESHOLD_PX = 7;
 
+/**
+ * The opt-in dot grid: its pitch in world units, and how close two dots may get
+ * on screen before the lattice thins out (see `applyView`). Nothing else on the
+ * canvas is measured against these — the grid is surface texture, not a layout
+ * rule, and dragging snaps to the edges of other devices rather than to a
+ * lattice.
+ */
+const GRID_WORLD_PX = 24;
+const GRID_MIN_SCREEN_PX = 12;
+
 interface DragState {
   pointerId: number;
   startClient: { x: number; y: number };
@@ -79,6 +89,11 @@ export function Canvas() {
   useEffect(() => {
     snapEnabledRef.current = snapEnabled;
   }, [snapEnabled]);
+  // Same reason: `applyView` runs on every pan and zoom frame and keeps an empty
+  // dependency list, because recreating it would tear down and rebuild the wheel
+  // listener and the whole imperative API. The effect that keeps this in sync
+  // lives just under applyView, where it can also repaint on the toggle.
+  const showGridRef = useRef(showGrid);
 
   /** World-space rect of a device, from its preset geometry. */
   const rectFor = useCallback((device: DeviceRow): Rect => {
@@ -101,23 +116,62 @@ export function Canvas() {
     if (!world || !viewport) return;
     const { x, y, scale } = viewRef.current;
     world.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
-    // Keep the grid locked to world space so it reads as a surface, not a texture.
-    const grid = Math.max(24 * scale, 6);
-    viewport.style.backgroundSize = `${grid}px ${grid}px, ${grid}px ${grid}px`;
-    viewport.style.backgroundPosition = `${x}px ${y}px, ${x}px ${y}px`;
+
+    // The canvas surface — tone, lighting, grain — is screen-space and static, so
+    // with the grid off a pan writes one transform on one composited layer and
+    // touches the viewport's own paint not at all. Only the opt-in grid is locked
+    // to world space, and only it pays for that: two style writes per frame that
+    // repaint the viewport's background.
+    if (showGridRef.current) {
+      // Thin the lattice out rather than let it turn into a wash: double the
+      // pitch until the dots are at least GRID_MIN_SCREEN_PX apart. The `> 0`
+      // guard is there so a degenerate scale can never spin this loop.
+      let step = GRID_WORLD_PX * scale;
+      while (step > 0 && step < GRID_MIN_SCREEN_PX) step *= 2;
+      viewport.style.backgroundSize = `${step}px ${step}px`;
+      // Half a step back, because the dot sits at the CENTRE of its tile: this
+      // puts a dot on the world origin rather than half a cell off it. It is also
+      // what makes the doubling above a true thinning — anchored this way every
+      // dot of the doubled lattice is a dot of the base one, so crossing the
+      // threshold mid-zoom drops every other dot and moves none of them. Anchor
+      // the tile at `x, y` instead and each doubling slides the whole lattice by
+      // half a cell, which reads as a pop. Keep this in step with the static
+      // fallback on `.pl-canvas-grid` in globals.css.
+      viewport.style.backgroundPosition = `${x - step / 2}px ${y - step / 2}px`;
+    }
     canvasApi.publishZoom(scale);
   }, []);
+
+  // Keep the ref in step, and repaint on the toggle: turning the grid on has to
+  // place it at the current view immediately (the class's own background-size is
+  // only right at scale 1, unpanned), and turning it off has to drop the inline
+  // overrides along with the layer they were driving.
+  useEffect(() => {
+    showGridRef.current = showGrid;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    if (showGrid) {
+      applyView();
+      return;
+    }
+    viewport.style.backgroundSize = '';
+    viewport.style.backgroundPosition = '';
+  }, [applyView, showGrid]);
 
   /**
    * Glides the viewport to a new pan/zoom.
    *
-   * Driven by rAF rather than by a CSS transition, because the grid is painted as
-   * the viewport's background and has to stay locked to world space: a CSS
-   * transition would move the phones and leave the surface behind them standing
-   * still. `applyView` already writes the transform and both background
-   * properties together, and a pointer pan calls it on every move at 60fps — so
-   * this is the same write path a drag already proves is cheap, just driven by a
-   * clock instead of by a thumb.
+   * Driven by rAF rather than by a CSS transition. That was originally forced:
+   * the grid was painted as the viewport's background and had to stay locked to
+   * world space, and a CSS transition would have moved the phones while the
+   * surface behind them stood still. It no longer is — the surface is drawn in
+   * screen space now and the grid is a preference, so whenever it is switched off
+   * there is nothing left to keep in step with the transform and a CSS transition
+   * on the world element would do. Deliberately left alone: it is still
+   * the correct path for the opt-in grid, it is the same write path a pointer pan
+   * calls at 60fps and therefore already proven cheap, and swapping it for a
+   * transition brings its own questions (cancelling mid-flight against a gesture,
+   * cleaning the property up afterwards) that belong in their own change.
    *
    * Cancelled by the next gesture: a running ease is dropped the moment anyone
    * else writes the view, so the canvas never fights the pointer.
@@ -588,8 +642,13 @@ export function Canvas() {
     <div
       ref={viewportRef}
       className={cn(
-        'pl-no-select relative h-full w-full overflow-hidden',
-        showGrid ? 'pl-canvas-surface' : 'bg-[var(--pl-canvas-bg)]',
+        // The surface is unconditional: bench tone, lighting and grain are what
+        // the canvas *is*, and they were previously tied to the grid preference,
+        // so switching the grid off left a flat slab of colour. The grid is the
+        // only part that is opt-in, and it is one extra background layer on this
+        // same element — see the contract on .pl-canvas-surface in globals.css.
+        'pl-canvas-surface pl-no-select relative h-full w-full overflow-hidden',
+        showGrid && 'pl-canvas-grid',
       )}
       onPointerDown={onViewportPointerDown}
       onPointerMove={onPointerMove}

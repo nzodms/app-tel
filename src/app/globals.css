@@ -193,13 +193,36 @@
     /* Bench tone. Was #f1f2f5 (b > r: cool). Same lightness family, mirrored to
        the warm side so it reads as lit rather than as grey plastic. */
     --pl-canvas-bg: #f2f1ef;
-    /* Grid ink. Surface texture, not graph paper: faint enough that you read
-       the phones first and only notice the ruling when you look for it. Warm
-       neutral so the lines don't sit cold on the warmed bench. */
-    --pl-canvas-grid: rgb(26 24 21 / 0.034);
+    /* The lit part of the bench — a wide, soft pool a little above centre, as if
+       the lamp were where the toolbar is. Near-white and warm, so the middle of
+       the canvas gains about five levels over the bench tone and no hue. There is
+       not much headroom between #f2f1ef and white (thirteen levels), which is the
+       point: the modelling comes mostly from the shade below, and this only keeps
+       the middle from going down with the edges. */
+    --pl-canvas-light: rgb(255 255 252 / 0.35);
     /* Lighting falloff at the far edge of the canvas — see .pl-canvas-surface.
-       Same ink as the device shadows, so light and shadow agree. */
-    --pl-canvas-shade: rgb(24 22 18 / 0.04);
+       Same ink as the device shadows, so light and shadow agree. Eleven levels
+       at full strength, which only the bottom corners reach. */
+    --pl-canvas-shade: rgb(24 22 18 / 0.05);
+    /* Grain. One tiled sheet of fractal noise at a very low amplitude, sitting on
+       top of the two gradients to dither them — see .pl-canvas-surface::before
+       for why a gradient this flat needs dithering at all. The texture is the
+       bonus, not the goal.
+
+       Inlined as a data: URI, so it costs no request, cannot fail to load and
+       cannot be blocked by a policy. `stitchTiles` makes the noise seamless
+       across the 120px tile. `color-interpolation-filters='sRGB'` is load
+       bearing: the linearRGB default would push the noise well off mid-grey, and
+       mid-grey is what lets one tile darken a pale bench and lighten a dark one.
+
+       The dark theme's copy is the SAME tile with a smaller `opacity` on the
+       rect; if you edit the shape of the noise, edit both. */
+    --pl-canvas-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g' x='0' y='0' width='100%25' height='100%25' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23g)' opacity='0.05'/%3E%3C/svg%3E");
+    /* Grid ink — the opt-in dot lattice, not a ruling. Warm neutral so the dots
+       don't sit cold on the warmed bench, and strong enough per dot to be worth
+       switching on, which a dot can afford because it covers a fraction of the
+       area a pair of crossing rules did. */
+    --pl-canvas-grid: rgb(26 24 21 / 0.09);
 
     /* ---- device elevation -------------------------------------------------
        A phone is an object lying on that bench, not a card. Three stacked
@@ -324,14 +347,31 @@
        logic: a step deeper than paper-50 and a hair less cool than it, so the
        bench reads as the work area and the chrome as background. */
     --pl-canvas-bg: #121418;
-    /* Grid ink flips to light — and gets much quieter than in light. On a near
-       -black bench a small absolute step is a large *relative* one, so 2% of a
-       pale ink moves the surface about three levels: present when you look for
-       it, invisible when you are looking at a phone. */
-    --pl-canvas-grid: rgb(201 214 234 / 0.02);
-    /* Falloff at the edge of the bench. Same screen-space vignette as in light,
-       painted in the same ink as the device shadows. */
-    --pl-canvas-shade: rgb(0 0 0 / 0.32);
+    /* The lamp, at under a tenth of the light theme's alpha — it takes very
+       little ink to lift a near-black surface. The lift itself is about five
+       levels, the same as in light; what changes is the total range: ten levels
+       from the middle of the bench to its corners against sixteen there, which
+       is roughly three quarters of the light theme's perceived depth once you
+       account for a level near black being worth about a fifth more to the eye
+       than a level near white. Quieter, which is this theme's whole rule. The
+       ink also turns cool — a warm light on a cool dark surface reads as a stain
+       rather than as illumination. */
+    --pl-canvas-light: rgb(188 206 236 / 0.03);
+    /* Falloff at the edge of the bench. Same screen-space shape as in light; the
+       ink is plain black because grey ink on #121418 has nothing to give. Was
+       0.32 with no pool above it — a shade lighter now that the middle is lit,
+       so the two together keep the range they had. */
+    --pl-canvas-shade: rgb(0 0 0 / 0.26);
+    /* Same grain tile, a little over half the amplitude — see the light theme's
+       note. It has less to do here (the gradients under it span ten levels
+       rather than sixteen, so there are fewer quantisation steps to break up)
+       and any texture on a dark surface reads louder than the same texture on a
+       pale one. */
+    --pl-canvas-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g' x='0' y='0' width='100%25' height='100%25' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23g)' opacity='0.028'/%3E%3C/svg%3E");
+    /* Dot ink flips to light, and gets much quieter for the same reason the lamp
+       does: 4.5% of a pale ink is a dot you can find when you look for it and
+       cannot see when you are looking at a phone. */
+    --pl-canvas-grid: rgb(201 214 234 / 0.045);
 
     /* ---- device elevation -------------------------------------------------
        Identical offsets, blurs and spreads to the light theme — a phone must
@@ -531,39 +571,151 @@
 }
 
 @layer utilities {
-  /* The canvas backdrop: near-flat with a very quiet grid. Two layers so the
-     grid stays crisp at any zoom without re-rendering.
+  /* ==========================================================================
+     The canvas surface
+     --------------------------------------------------------------------------
+     A lit bench, not a sheet of graph paper. Three things stack up, all of them
+     drawn in screen space, and with the grid switched off none of them is written
+     to during a pan or a zoom: the surface paints once and the world slides over
+     it as a separate composited layer. (DEFAULT_PREFERENCES.canvasGrid is still
+     `true` in src/lib/preferences.ts, so out of the box you are on the grid path
+     below; flipping that default is the other half of this change.) The three are
 
-     CONTRACT: exactly two background-image layers, in this order (vertical
-     rules, then horizontal). canvas.tsx drives them from the zoom and writes
-     two comma-separated background-size values and two background-position
-     values — a third layer here would silently inherit a world-space size and
-     position it must not have. Anything else this surface needs goes on the
-     pseudo-element below. */
+       .pl-canvas-surface           the bench tone         background-color
+       .pl-canvas-grid              opt-in dot lattice     background-image
+       .pl-canvas-surface::before   lighting + grain       a positioned box
+
+     Those are also in paint order, bottom to top: an element's background-image
+     sits above its background-color and below its children, and ::before is the
+     first child. So the lighting quiets the dots at the edges exactly as it
+     quiets the bench, which is what stops an opt-in grid from being the loudest
+     thing in the corners.
+
+     CONTRACT WITH canvas.tsx: `.pl-canvas-grid` contributes EXACTLY ONE
+     background-image layer to the host, and it is the only layer the host has.
+     canvas.tsx locks it to world space by writing ONE `background-size` and ONE
+     `background-position` on that element, and only while the class is on. A
+     second layer here would silently inherit that world-space size and position;
+     anything else this surface needs goes on the pseudo-element instead, which
+     canvas.tsx never touches.
+     ====================================================================== */
   .pl-canvas-surface {
     background-color: var(--pl-canvas-bg);
-    background-image:
-      linear-gradient(to right, var(--pl-canvas-grid) 1px, transparent 1px),
-      linear-gradient(to bottom, var(--pl-canvas-grid) 1px, transparent 1px);
   }
 
-  /* Lighting, not ornament. A screen-space falloff (it does not pan or zoom
-     with the world) so the middle of the canvas reads as the lit part of the
-     bench and the edges settle back toward the chrome — which also quiets the
-     grid exactly where it is densest. Painted first, under the world layer, and
-     transparent to pointers so panning and marquee selection are untouched.
-     Requires a positioned host; canvas.tsx already gives it `relative`. */
+  /* Lighting, not ornament: the middle of the bench reads as the lit part and the
+     edges settle back toward the chrome. Screen-space — it does not pan or zoom
+     with the world, which is what makes it lighting rather than a very large
+     texture stuck to the floor. Transparent to pointers, so panning, dragging and
+     background click-to-deselect are untouched. Requires a positioned host;
+     canvas.tsx already gives it `relative`.
+
+     Three layers, top to bottom:
+
+     1. Grain, and it is not decoration. The two gradients below it travel about
+        sixteen 8-bit levels from the middle of the bench to its corners (ten in
+        dark), so on a 1500px canvas they cross a quantisation step every ~50px —
+        the exact width at which banding becomes visible on a near-flat surface.
+        A tile of low-amplitude noise breaks those steps up; the texture is what
+        you get for free. Fixed at 120px in screen space, rasterised once, never
+        re-rasterised during a gesture.
+     2. The pool of light: wide, and centred above the middle as if the lamp were
+        where the toolbar is.
+     3. The falloff, centred below the pool and only reaching full strength in the
+        bottom corners.
+
+     Light high, shadow low, and both sized in percentages of the box so the
+     modelling is identical on any canvas at any window size. In the light theme
+     that runs from about #f7f6f4 just above the middle to about #e7e6e4 in the
+     bottom corners, with the sides a level or two under the bench tone: enough
+     for the canvas to read as a surface with an edge, not enough to read as a
+     vignette.
+
+     Both gradients are drawn with eight stops on a raised-cosine curve rather
+     than the two a ramp needs. A two-stop ramp this shallow puts a slope
+     discontinuity at each end and the eye finds them (Mach bands) even when it
+     cannot see the ramp itself; after the first paint the extra stops cost
+     nothing. */
   .pl-canvas-surface::before {
     content: '';
     position: absolute;
     inset: 0;
     pointer-events: none;
+    background-image:
+      var(--pl-canvas-grain),
+      radial-gradient(
+        96% 76% at 50% 22%,
+        var(--pl-canvas-light) 0%,
+        color-mix(in srgb, var(--pl-canvas-light) 90%, transparent) 20%,
+        color-mix(in srgb, var(--pl-canvas-light) 73%, transparent) 35%,
+        color-mix(in srgb, var(--pl-canvas-light) 50%, transparent) 50%,
+        color-mix(in srgb, var(--pl-canvas-light) 27%, transparent) 65%,
+        color-mix(in srgb, var(--pl-canvas-light) 10%, transparent) 80%,
+        color-mix(in srgb, var(--pl-canvas-light) 2%, transparent) 90%,
+        transparent 100%
+      ),
+      radial-gradient(
+        92% 88% at 50% 40%,
+        transparent 34%,
+        color-mix(in srgb, var(--pl-canvas-shade) 10%, transparent) 47%,
+        color-mix(in srgb, var(--pl-canvas-shade) 27%, transparent) 57%,
+        color-mix(in srgb, var(--pl-canvas-shade) 50%, transparent) 67%,
+        color-mix(in srgb, var(--pl-canvas-shade) 73%, transparent) 77%,
+        color-mix(in srgb, var(--pl-canvas-shade) 90%, transparent) 87%,
+        color-mix(in srgb, var(--pl-canvas-shade) 98%, transparent) 94%,
+        var(--pl-canvas-shade) 100%
+      );
+    background-size:
+      120px 120px,
+      100% 100%,
+      100% 100%;
+    background-repeat: repeat, no-repeat, no-repeat;
+  }
+
+  /* The grid, opt-in from the Settings toggle. Dots on the world lattice rather
+     than crossing rules: a fraction of the ink for the same information, so the
+     surface still reads as a surface with the grid on. The dot stays 1px at every
+     zoom — a colour-stop length inside a gradient is an absolute CSS length, not
+     a fraction of the tile, so scaling the tile moves the dots apart without
+     fattening them — and it reads as a mark on the bench instead of a rule that
+     thickens as you zoom in.
+
+     The dot sits at the CENTRE of its tile, so canvas.tsx offsets
+     background-position by half a step to land it on the world origin. If you
+     move it, move that too.
+
+     ONE background-image layer. See the contract above before adding another. */
+  .pl-canvas-grid {
     background-image: radial-gradient(
-      118% 88% at 50% 38%,
-      transparent 0%,
-      transparent 45%,
-      var(--pl-canvas-shade) 100%
+      circle at center,
+      var(--pl-canvas-grid) 0px,
+      var(--pl-canvas-grid) 1px,
+      transparent 1.6px
     );
+    /* The unscripted answer: the world pitch at scale 1, unpanned, with the same
+       half-step offset canvas.tsx applies so a dot lands on the world origin.
+       canvas.tsx overrides both of these inline on the frames it owns, but this
+       is what the first painted frame after the toggle uses — without it that
+       frame would fall back to `auto`, which for a gradient means one tile the
+       size of the whole canvas: a single 1px dot in the middle of the room. */
+    background-size: 24px 24px;
+    background-position: -12px -12px;
+  }
+
+  /* The one case where any of this costs something per frame. With the grid on,
+     canvas.tsx rewrites the host's background-size and background-position on
+     every pan and zoom frame; that invalidates the host's paint, and an
+     invalidated rect re-rasterises every display item it intersects — which
+     would include the grain and both gradients sitting above it. Promoting the
+     pseudo-element to its own compositing layer takes it out of that rect: it is
+     rasterised once and thereafter re-composited, which is GPU work instead of
+     raster work.
+
+     Scoped to the grid class on purpose. With no grid nothing writes to the host
+     at all, so there is nothing to be invalidated by and the layer would be a
+     full-viewport surface at device resolution held for no reason. */
+  .pl-canvas-grid::before {
+    will-change: transform;
   }
 
   .pl-hairline {
