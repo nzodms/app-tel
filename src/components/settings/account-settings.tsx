@@ -2,10 +2,19 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Loader2, RotateCcw } from 'lucide-react';
+import { Check, Loader2, Monitor, Moon, RotateCcw, Sun } from 'lucide-react';
 import { api, errorText } from '@/lib/api-client';
+import { cn } from '@/lib/cn';
 import { Badge, Button, Card, Field, Input } from '@/components/ui/primitives';
+import { applyTheme, resolveTheme } from '@/components/studio/theme';
 import type { UserPreferences } from '@/lib/preferences';
+
+/** "System" is a real third option, not a dressed-up default: it follows the OS. */
+const THEME_CHOICES = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+] as const satisfies readonly { value: UserPreferences['theme']; label: string; icon: unknown }[];
 
 /**
  * Account settings.
@@ -48,6 +57,15 @@ export function AccountSettings({
   const toggle = (key: keyof UserPreferences, value: boolean) => {
     setPrefs((current) => ({ ...current, [key]: value }));
     void save({ preferences: { [key]: value } });
+  };
+
+  const chooseTheme = (theme: UserPreferences['theme']) => {
+    setPrefs((current) => ({ ...current, theme }));
+    // Applied immediately rather than on the round trip: the page you are
+    // looking at is the preview of this setting, and waiting on the network to
+    // see it makes the control feel broken.
+    applyTheme(resolveTheme(theme));
+    void save({ preferences: { theme } });
   };
 
   const revisitOnboarding = async () => {
@@ -139,9 +157,41 @@ export function AccountSettings({
             onChange={(value) => toggle('reduceMotion', value)}
           />
         </div>
-        <p className="mt-3 text-[11.5px] text-paper-400">
-          Dark mode is not built yet — PhoneLab is light-only for now.
-        </p>
+
+        <div className="mt-3 border-t border-paper-150 pt-3">
+          <div className="text-[12.5px] font-medium text-paper-800">Appearance</div>
+          <p className="mt-0.5 text-[11.5px] leading-snug text-paper-500">
+            The studio only. A device on the canvas keeps its own light or dark
+            setting, so what you are testing never changes with the room around it.
+          </p>
+          <div
+            role="radiogroup"
+            aria-label="Appearance"
+            className="mt-2 inline-flex rounded-lg border border-paper-200 bg-paper-100 p-0.5"
+          >
+            {THEME_CHOICES.map((choice) => {
+              const active = prefs.theme === choice.value;
+              return (
+                <button
+                  key={choice.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => chooseTheme(choice.value)}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-1.5 rounded-[7px] px-2.5 py-1 text-[12px] font-medium transition-colors duration-150 [transition-timing-function:var(--ease-out-quint)]',
+                    active
+                      ? 'bg-paper-0 text-paper-900 shadow-[0_1px_2px_rgb(16_20_26/0.06)]'
+                      : 'text-paper-600 hover:text-paper-900',
+                  )}
+                >
+                  <choice.icon size={12.5} strokeWidth={1.9} />
+                  {choice.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </Card>
 
       <Card className="p-4">

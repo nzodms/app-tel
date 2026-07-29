@@ -8,6 +8,25 @@
    - "slate": code + terminal surfaces (deep, desaturated, never pure black)
    One accent (azure). Semantics stay muted so the phones are the loudest thing
    on screen.
+
+   THEMES. There is one set of token names and two sets of values. The light set
+   is the default, on :root; the dark set is an override under
+   :root[data-theme='dark'] (see "dark theme" below). Nothing in the app reads
+   the theme: every component keeps using bg-paper-0, border-paper-200,
+   text-paper-900 and gets the right answer in both.
+
+   Two consequences worth knowing before editing this file:
+
+   1. A Tailwind utility compiles to `var(--color-<name>)`, so remapping a colour
+      token on a selector works. A *shadow* utility does not: Tailwind inlines an
+      @theme shadow value straight into `--tw-shadow`, so an inlined literal can
+      never be re-pointed by a theme. Shadows therefore go through a
+      --pl-shadow-* custom property, exactly as the device elevation already did.
+   2. Anything that must NOT follow the studio theme has to be able to get the
+      light values back. Those tokens are declared on :root as --pl-*, and the
+      @theme entry is a pointer at them — so the device chassis rule further down
+      this file can restore them with a var() instead of a second copy of the
+      ramp that would silently drift.
    ========================================================================== */
 @theme {
   --font-sans:
@@ -17,21 +36,24 @@
     ui-monospace, 'SF Mono', 'JetBrains Mono', 'Menlo', 'Cascadia Mono',
     'Roboto Mono', monospace;
 
-  /* Neutral ramp — very slightly cool. */
-  --color-paper-0: #ffffff;
-  --color-paper-25: #fcfcfd;
-  --color-paper-50: #f8f9fb;
-  --color-paper-100: #f2f3f6;
-  --color-paper-150: #eceef2;
-  --color-paper-200: #e4e7ec;
-  --color-paper-300: #d3d7de;
-  --color-paper-400: #a8aeb9;
-  --color-paper-500: #7c838f;
-  --color-paper-600: #5b626d;
-  --color-paper-700: #414751;
-  --color-paper-800: #2b3037;
-  --color-paper-900: #191d22;
-  --color-paper-950: #0f1216;
+  /* Neutral ramp — very slightly cool. The literals live on :root as --pl-paper-*
+     so a device chassis can pull the light ramp back regardless of the studio
+     theme; utilities still compile to var(--color-paper-N), so this indirection
+     is invisible to every component. */
+  --color-paper-0: var(--pl-paper-0);
+  --color-paper-25: var(--pl-paper-25);
+  --color-paper-50: var(--pl-paper-50);
+  --color-paper-100: var(--pl-paper-100);
+  --color-paper-150: var(--pl-paper-150);
+  --color-paper-200: var(--pl-paper-200);
+  --color-paper-300: var(--pl-paper-300);
+  --color-paper-400: var(--pl-paper-400);
+  --color-paper-500: var(--pl-paper-500);
+  --color-paper-600: var(--pl-paper-600);
+  --color-paper-700: var(--pl-paper-700);
+  --color-paper-800: var(--pl-paper-800);
+  --color-paper-900: var(--pl-paper-900);
+  --color-paper-950: var(--pl-paper-950);
 
   /* Code / terminal surfaces. */
   --color-slate-code-0: #1b1f26;
@@ -62,10 +84,15 @@
   --color-caution-200: #f8dfae;
   --color-caution-500: #c07d10;
   --color-caution-700: #8f5c07;
-  --color-danger-50: #fef2f2;
-  --color-danger-200: #f6cccc;
+  /* Danger's tint trio is routed through :root for the same reason the paper
+     ramp is: the build-failure card is drawn inside a device screen, and a
+     device is not allowed to change with the studio theme. */
+  --color-danger-50: var(--pl-danger-50);
+  --color-danger-100: var(--pl-danger-100);
+  --color-danger-200: var(--pl-danger-200);
   --color-danger-500: #d13c3c;
-  --color-danger-700: #9d2727;
+  --color-danger-600: var(--pl-danger-600);
+  --color-danger-700: var(--pl-danger-700);
 
   /* Role colours for devices — distinguishable, never neon. */
   --color-role-customer: #2570e8;
@@ -81,10 +108,12 @@
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out-quad: cubic-bezier(0.45, 0, 0.55, 1);
 
-  --shadow-hairline: 0 0 0 1px rgb(16 20 26 / 0.06);
-  --shadow-panel: 0 1px 2px rgb(16 20 26 / 0.04), 0 4px 12px rgb(16 20 26 / 0.04);
-  --shadow-float:
-    0 1px 2px rgb(16 20 26 / 0.06), 0 8px 24px -4px rgb(16 20 26 / 0.1);
+  /* Chrome elevation. Values on :root (--pl-shadow-*) for the reason given at the
+     top of the file: Tailwind inlines an @theme shadow into the utility, so only
+     a custom property indirection leaves the theme anything to move. */
+  --shadow-hairline: var(--pl-shadow-hairline);
+  --shadow-panel: var(--pl-shadow-panel);
+  --shadow-float: var(--pl-shadow-float);
 
   /* Device elevation. The real values live on :root (see --pl-shadow-device*);
      these are the Tailwind-utility face of the same tokens. Tailwind v4 inlines
@@ -98,6 +127,47 @@
 @layer base {
   :root {
     color-scheme: light;
+
+    /* ---- the light ramp ---------------------------------------------------
+       The real values behind --color-paper-* and the danger tint pair. Declared
+       here rather than inline in @theme so they survive the dark theme: the dark
+       block overrides --color-paper-* (the Tailwind face), never these, which
+       leaves the device-chassis rule at the bottom of this file something to
+       point back at. Editing a light colour means editing it here. */
+    --pl-paper-0: #ffffff;
+    --pl-paper-25: #fcfcfd;
+    --pl-paper-50: #f8f9fb;
+    --pl-paper-100: #f2f3f6;
+    --pl-paper-150: #eceef2;
+    --pl-paper-200: #e4e7ec;
+    --pl-paper-300: #d3d7de;
+    --pl-paper-400: #a8aeb9;
+    --pl-paper-500: #7c838f;
+    --pl-paper-600: #5b626d;
+    --pl-paper-700: #414751;
+    --pl-paper-800: #2b3037;
+    --pl-paper-900: #191d22;
+    --pl-paper-950: #0f1216;
+    --pl-danger-50: #fef2f2;
+    /* 100 and 600 were referenced by components and never defined, so Tailwind
+       emitted no rule at all: the danger button had no hover state and the
+       build-failure card's icon silently inherited its parent's colour instead
+       of being red. Interpolated into the existing ramp rather than picked, so
+       the steps stay evenly spaced. */
+    --pl-danger-100: #fbdedd;
+    --pl-danger-200: #f6cccc;
+    --pl-danger-600: #b73232;
+    --pl-danger-700: #9d2727;
+
+    /* ---- chrome elevation -------------------------------------------------
+       Two names per shadow: the -light one is the frozen light value (never
+       overridden, so a device chassis can restore it), and the unsuffixed one is
+       what the utilities actually read. */
+    --pl-shadow-hairline: 0 0 0 1px rgb(16 20 26 / 0.06);
+    --pl-shadow-panel: 0 1px 2px rgb(16 20 26 / 0.04), 0 4px 12px rgb(16 20 26 / 0.04);
+    --pl-shadow-float-light:
+      0 1px 2px rgb(16 20 26 / 0.06), 0 8px 24px -4px rgb(16 20 26 / 0.1);
+    --pl-shadow-float: var(--pl-shadow-float-light);
 
     /* ---- canvas surface ---------------------------------------------------
        The canvas is the one lit surface in the app; the chrome around it is
@@ -146,6 +216,193 @@
     --pl-shadow-device-lift:
       0 18px 32px -14px rgb(20 18 16 / 0.16),
       0 44px 78px -28px rgb(20 18 16 / 0.22);
+  }
+
+  /* ==========================================================================
+     Dark theme
+     --------------------------------------------------------------------------
+     Same token names, different values. `data-theme` is written on <html> by
+     src/components/studio/theme.tsx; nothing else in the app knows which theme
+     is live.
+
+     The intent is a deep, slightly cool grey — not black. Black is cheap and
+     unpleasant to sit in front of: it makes every hairline either invisible or a
+     glare, and it gives depth nothing to work with. This ramp keeps the light
+     theme's relationships instead of inverting them literally — panels a step
+     above the app background, the canvas a step below it, borders a step above
+     the panel they sit on — so the same components read the same way.
+
+     Depth comes from those steps and from borders, not from shadows: an ink
+     shadow on a dark surface is nearly free of contrast, so the light theme's
+     soft grey shadows would simply disappear. The shadow geometry is unchanged
+     (same offsets, blurs and spreads, so nothing moves or resizes); only the ink
+     changes, to near-black for cast shadows and to a low-alpha light for the
+     hairline ring, which is the one that has to *gain* contrast rather than lose
+     it.
+     ====================================================================== */
+  :root[data-theme='dark'] {
+    /* Native scrollbars, form controls, and the default canvas colour. */
+    color-scheme: dark;
+
+    /* ---- neutral ramp -----------------------------------------------------
+       Read it the way the light one is read, not as an inversion: paper-0 is
+       still "the panel", paper-50 still "behind the panels", paper-200 still
+       "the hairline", paper-900 still "text". Blue channel a few points above
+       red throughout, which is the same slight coolness the light ramp has.
+
+       These override the Tailwind face (--color-paper-*), never --pl-paper-*,
+       so the light ramp stays reachable — see the device chassis rule below. */
+    --color-paper-0: #20252c;
+    --color-paper-25: #1d222a;
+    --color-paper-50: #191d24;
+    --color-paper-100: #262c35;
+    --color-paper-150: #2b323c;
+    --color-paper-200: #323a45;
+    --color-paper-300: #404955;
+    --color-paper-400: #6d7783;
+    --color-paper-500: #8b95a2;
+    --color-paper-600: #a4aeba;
+    --color-paper-700: #bec6d1;
+    --color-paper-800: #d5dce4;
+    --color-paper-900: #e9eef4;
+    --color-paper-950: #f6f9fc;
+
+    /* ---- tinted states ----------------------------------------------------
+       The -50/-200/-700 steps are one pattern, used everywhere: a tint surface,
+       a border on it, and text on it (`bg-azure-50 text-azure-700` is how the
+       whole studio says "this one is active"). Left at their light values they
+       would be near-white blocks punched into the chrome, so each hue keeps its
+       identity but changes side: the surface becomes a deep tint of the hue and
+       the text a light one. The -500 solids are untouched — they are fills with
+       white text on them, and they read correctly against both themes. */
+    --color-azure-50: #17233a;
+    --color-azure-100: #1e3358;
+    --color-azure-200: #27466f;
+    --color-azure-700: #8fbcff;
+    --color-danger-50: #2c1719;
+    --color-danger-100: #3b1d20;
+    --color-danger-200: #5d2b2d;
+    --color-danger-600: #e88a86;
+    --color-danger-700: #f0a3a0;
+    --color-caution-50: #2a2113;
+    --color-caution-200: #5c4620;
+    --color-caution-700: #e8b562;
+    --color-positive-50: #12261c;
+    --color-positive-200: #235339;
+    --color-positive-700: #62d29a;
+
+    /* slate-code-* is deliberately not remapped. It was already a dark family in
+       a light app, and it still lands where it should: the editor well
+       (#13171c) and the log surface sit clearly *below* the panel around them
+       (paper-0 #20252c), so code still reads as a recessed surface rather than
+       merging into the chrome. */
+
+    /* ---- chrome elevation -------------------------------------------------
+       Same geometry, near-black ink. The hairline ring inverts: on dark it has
+       to be light to be a ring at all. */
+    --pl-shadow-hairline: 0 0 0 1px rgb(226 235 248 / 0.07);
+    --pl-shadow-panel: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.3);
+    --pl-shadow-float: 0 1px 2px rgb(0 0 0 / 0.45), 0 8px 24px -4px rgb(0 0 0 / 0.55);
+
+    /* ---- canvas surface ---------------------------------------------------
+       Still a distinct surface from the chrome around it, still by the same
+       logic: a step deeper than paper-50 and a hair less cool than it, so the
+       bench reads as the work area and the chrome as background. */
+    --pl-canvas-bg: #121418;
+    /* Grid ink flips to light — and gets much quieter than in light. On a near
+       -black bench a small absolute step is a large *relative* one, so 2% of a
+       pale ink moves the surface about three levels: present when you look for
+       it, invisible when you are looking at a phone. */
+    --pl-canvas-grid: rgb(201 214 234 / 0.02);
+    /* Falloff at the edge of the bench. Same screen-space vignette as in light,
+       painted in the same ink as the device shadows. */
+    --pl-canvas-shade: rgb(0 0 0 / 0.32);
+
+    /* ---- device elevation -------------------------------------------------
+       Identical offsets, blurs and spreads to the light theme — a phone must
+       not change size, position or silhouette when the studio changes theme —
+       with two ink changes. The contour inverts (a dark object on a dark bench
+       needs a light edge to cut out, exactly as a pale one needed a dark edge on
+       paper), and the cast layers go near-black, because grey ink on #121418 is
+       not a shadow. The lift layer keeps its shape so the selection cross-fade
+       stays one composited opacity change. */
+    --pl-shadow-device-contour: 0 0 0 1px rgb(214 225 242 / 0.1);
+    --pl-shadow-device-contact:
+      0 1px 1.5px rgb(0 0 0 / 0.5), 0 3px 6px -2px rgb(0 0 0 / 0.42);
+    --pl-shadow-device-ambient:
+      0 12px 24px -10px rgb(0 0 0 / 0.5), 0 32px 56px -22px rgb(0 0 0 / 0.62);
+    --pl-shadow-device-lift:
+      0 18px 32px -14px rgb(0 0 0 / 0.5), 0 44px 78px -28px rgb(0 0 0 / 0.62);
+  }
+
+  /* ==========================================================================
+     The device chassis is not studio chrome
+     --------------------------------------------------------------------------
+     A device on the canvas already has a theme: its own. `DeviceRow.theme`
+     decides what the app inside renders and what the OS chrome around it looks
+     like, and the studio's theme must not touch either. Everything a device
+     draws is therefore pinned to the light token values, whichever theme the
+     studio is in, so the inside of a phone is byte-identical in both.
+
+     Two things this actually protects, both real:
+       - surface-chassis.tsx draws the desktop/browser window families from the
+         studio palette (LIGHT_WINDOW is paper-100/200/300/400/0). Without this
+         rule a light-themed browser device would grow dark window chrome in the
+         dark studio — its `theme` field would have stopped controlling it.
+       - the build-failure card and its shadow are drawn on the screen itself.
+
+     What is deliberately NOT pinned: the shadows the device casts *onto* the
+     canvas (--pl-shadow-device-*). Those describe the object's relationship to
+     the bench, not the device, and they follow the bench.
+
+     `color-scheme: light` here is the same guarantee for the preview iframe.
+     CSS cannot cross a document boundary, so `data-theme` on our <html> can
+     never reach the app inside; the one thing that *does* cross is the colour
+     scheme, which browsers take from the embedding element for a frame whose own
+     document declares none — and the preview host declares none, so a dark
+     studio would otherwise give a light app's checkboxes, selects and scrollbars
+     dark UA rendering. Pinned to light, a frame sees exactly what it sees today,
+     and the frame's own <html data-theme> — driven by `DeviceRow.theme` over
+     postMessage — remains the only thing that decides how the app looks.
+
+     SELECTOR CONTRACT: device-node.tsx renders exactly three children under
+     [data-device-id] — the floating action bar (absolute), the label strip
+     (flex), and the chassis. Both chassis renderers (phone.tsx, and every family
+     in surface-chassis.tsx) root themselves on a `relative` box sized to
+     `geometry.chassis`. If that ever stops being true, this rule stops matching
+     and light-themed window chrome starts following the studio theme again.
+     ====================================================================== */
+  :root[data-theme='dark'] [data-device-id] > .relative {
+    color-scheme: light;
+
+    --color-paper-0: var(--pl-paper-0);
+    --color-paper-25: var(--pl-paper-25);
+    --color-paper-50: var(--pl-paper-50);
+    --color-paper-100: var(--pl-paper-100);
+    --color-paper-150: var(--pl-paper-150);
+    --color-paper-200: var(--pl-paper-200);
+    --color-paper-300: var(--pl-paper-300);
+    --color-paper-400: var(--pl-paper-400);
+    --color-paper-500: var(--pl-paper-500);
+    --color-paper-600: var(--pl-paper-600);
+    --color-paper-700: var(--pl-paper-700);
+    --color-paper-800: var(--pl-paper-800);
+    --color-paper-900: var(--pl-paper-900);
+    --color-paper-950: var(--pl-paper-950);
+    --color-danger-50: var(--pl-danger-50);
+    --color-danger-100: var(--pl-danger-100);
+    --color-danger-200: var(--pl-danger-200);
+    --color-danger-600: var(--pl-danger-600);
+    --color-danger-700: var(--pl-danger-700);
+    --pl-shadow-float: var(--pl-shadow-float-light);
+  }
+
+  /* Belt and braces for the one preview that is not inside a device node (the
+     share reviewer renders a frame of its own). Same reasoning as above: an
+     iframe must see the colour scheme it saw before dark mode existed, because
+     the document inside it is somebody's app and not our chrome. */
+  :root[data-theme='dark'] iframe {
+    color-scheme: light;
   }
 
   * {

@@ -62,9 +62,17 @@ const SELECTION_GAP = 4;
 
 /**
  * OS chrome is not a material — it is interface — so the window families are
- * drawn from the studio palette rather than from a chassis gradient, and they
- * follow the device's own theme the way a real window follows the system
- * appearance.
+ * drawn as a small palette rather than from a chassis gradient, and it follows
+ * the *device's* theme the way a real window follows the system appearance.
+ *
+ * Literals, not `var(--color-paper-*)`. These are two different things that
+ * happen to look alike: the studio's chrome and a simulated window's chrome. The
+ * moment the studio gained a dark theme, borrowing its tokens meant a
+ * light-themed browser device sitting on a dark canvas grew dark window chrome —
+ * its own `theme` field quietly stopped controlling it. The values below are the
+ * light palette's, frozen at the point they were copied from it, so the two can
+ * now move independently. Same reason `phone.tsx` does not read chrome tokens for
+ * a bezel.
  */
 interface WindowPalette {
   shell: string;
@@ -76,21 +84,21 @@ interface WindowPalette {
 }
 
 const LIGHT_WINDOW: WindowPalette = {
-  shell: 'var(--color-paper-100)',
-  frame: 'var(--color-paper-300)',
-  hairline: 'var(--color-paper-200)',
-  dot: 'var(--color-paper-400)',
-  field: 'var(--color-paper-0)',
-  fieldRing: 'var(--color-paper-200)',
+  shell: '#f2f3f6',
+  frame: '#d3d7de',
+  hairline: '#e4e7ec',
+  dot: '#a8aeb9',
+  field: '#ffffff',
+  fieldRing: '#e4e7ec',
 };
 
 const DARK_WINDOW: WindowPalette = {
-  shell: 'var(--color-slate-code-0)',
-  frame: 'var(--color-slate-code-300)',
-  hairline: 'var(--color-slate-code-200)',
-  dot: 'var(--color-slate-code-400)',
-  field: 'var(--color-slate-code-100)',
-  fieldRing: 'var(--color-slate-code-300)',
+  shell: '#1b1f26',
+  frame: '#2f353f',
+  hairline: '#232830',
+  dot: '#3d444f',
+  field: '#13171c',
+  fieldRing: '#2f353f',
 };
 
 /** Window buttons: three plain circles. Shape only — no colour, no glyphs. */

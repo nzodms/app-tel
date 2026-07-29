@@ -28,6 +28,7 @@ import { VersionsPanel } from './left/versions-panel';
 import { ClaudePanel } from './left/claude-panel';
 import { CommentsPanel } from './left/comments-panel';
 import { useRealtime } from './use-realtime';
+import { useStudioTheme } from './theme';
 import { ProjectSwitcherProvider, type SwitcherProject } from './project-switcher';
 import type { LeftTab, StudioSnapshot } from './types';
 
@@ -73,6 +74,11 @@ function StudioShell() {
   const setLeftWidth = useStudio((state) => state.setLeftWidth);
   const persistLeftWidth = useStudio((state) => state.persistLeftWidth);
   const reduceMotion = useStudio((state) => state.preferences.reduceMotion);
+  // Applies the stored theme and keeps following it: when it changes in
+  // Settings, and — under 'system' — when the OS flips under the open studio.
+  // The pre-paint script in the root layout has already set the same value on a
+  // fresh load, so this writes what it finds and only earns its keep afterwards.
+  useStudioTheme(useStudio((state) => state.preferences.theme));
   const openThreads = useStudio((state) => state.threads.filter((thread) => thread.status === 'open').length);
   const errorCount = useStudio(
     (state) => state.diagnostics.filter((entry) => entry.severity === 'error').length,
