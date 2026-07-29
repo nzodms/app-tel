@@ -5,6 +5,13 @@ import type { Store } from '../db';
 import { checkRateLimit, recordToolCall } from '../services/audit';
 import { touchConnection } from '../oauth/service';
 import { findTool } from './registry';
+import {
+  activityKind,
+  activityTarget,
+  newCallId,
+  publishActivity,
+  type ClaudeActivity,
+} from './activity';
 import type { ToolContext, ToolOutcome } from './types';
 
 /**
@@ -69,8 +76,32 @@ export async function runTool(
     return errorResult(message);
   }
 
+  // Both edges of the call, so the studio can show work in progress rather than a
+  // list of work already done. Published before the handler runs — this is the
+  // only place that knows a call has *started*.
+  const callId = newCallId();
+  const activity: Omit<ClaudeActivity, 'phase' | 'at'> = {
+    callId,
+    kind: activityKind(tool),
+    tool: tool.name,
+    title: tool.title,
+    target: activityTarget(args),
+  };
+  publishActivity(projectId, { ...activity, phase: 'started', at: new Date().toISOString() });
+
+  const finish = (ok: boolean, error: string | null) =>
+    publishActivity(projectId, {
+      ...activity,
+      phase: 'finished',
+      at: new Date().toISOString(),
+      ok,
+      durationMs: Date.now() - startedAt,
+      error,
+    });
+
   try {
     const result: ToolOutcome = await tool.handler(input, context);
+    finish(!result.isError, result.isError ? result.text : null);
     await audit(
       context,
       tool.name,
@@ -89,6 +120,7 @@ export async function runTool(
     };
   } catch (error) {
     const message = toToolErrorMessage(error);
+    finish(false, message);
     await audit(
       context,
       tool.name,

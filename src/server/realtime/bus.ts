@@ -120,6 +120,19 @@ export const RT = {
   commentChanged: 'comment.changed',
   shareChanged: 'share.changed',
   mcpActivity: 'mcp.activity',
+  /**
+   * Claude, working, as it happens.
+   *
+   * `mcpActivity` is the audit row, written *after* a tool returns — good for a
+   * trail, useless for watching. This fires on both edges of every tool call, so
+   * the studio can show what is happening while it is happening rather than a
+   * list of what already did.
+   *
+   * Everything it carries is observed: which tool was called, what it was called
+   * on, whether it succeeded, how long it took. Nothing about what Claude is
+   * "thinking" — that is not observable from here and must never be claimed.
+   */
+  claudeActivity: 'claude.activity',
 } as const;
 
 export type RealtimeEventName = (typeof RT)[keyof typeof RT];

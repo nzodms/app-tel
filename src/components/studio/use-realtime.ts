@@ -49,6 +49,7 @@ export function useRealtime(projectId: string): void {
       'comment.changed',
       'share.changed',
       'mcp.activity',
+      'claude.activity',
       'studio.capture-device',
       'studio.refresh-devices',
     ];

@@ -22,6 +22,8 @@ export type IdPrefix =
   | 'cmt'
   | 'mcn'
   | 'aud'
+  /** One Claude tool call, tying its `started` event to its `finished` one. */
+  | 'act'
   | 'oac'
   | 'ocd'
   | 'otk';
